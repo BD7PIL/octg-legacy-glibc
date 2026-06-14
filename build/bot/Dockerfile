@@ -18,9 +18,9 @@ RUN sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-*.repo \
 # yum metadata refresh on dead mirrorlist before sed can fix it)
 RUN printf '[centos-sclo-rh]\nname=CentOS-7 - SCLo rh\nbaseurl=http://vault.centos.org/7.9.2009/sclo/$basearch/rh/\ngpgcheck=0\nenabled=1\n\n[centos-sclo-sclo]\nname=CentOS-7 - SCLo sclo\nbaseurl=http://vault.centos.org/7.9.2009/sclo/$basearch/sclo/\ngpgcheck=0\nenabled=1\n' > /etc/yum.repos.d/CentOS-SCLo.repo \
     && yum install -y \
-        devtoolset-12-gcc \
-        devtoolset-12-gcc-c++ \
-        devtoolset-12-make \
+        devtoolset-11-gcc \
+        devtoolset-11-gcc-c++ \
+        devtoolset-11-make \
         git \
         curl \
         xz \
@@ -41,9 +41,9 @@ WORKDIR /tmp/build
 RUN git clone --depth 1 --branch "v${BOT_VERSION}" \
         https://github.com/grinev/opencode-telegram-bot.git .
 
-# Enable devtoolset-12 (GCC 12 — required for better-sqlite3 C++20)
+# Enable devtoolset-11 (GCC 11 — required for better-sqlite3 C++20, max available on CentOS7)
 SHELL ["/bin/bash", "-c"]
-RUN source /opt/rh/devtoolset-12/enable \
+RUN source /opt/rh/devtoolset-11/enable \
     && npm ci \
     && npm run build
 

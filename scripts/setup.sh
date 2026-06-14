@@ -105,7 +105,7 @@ prompt_config() {
 
     # -- Detect devtoolset --
     local dt_version=""
-    for dt_dir in /opt/rh/devtoolset-12 /opt/rh/devtoolset-11 /opt/rh/devtoolset-9 /opt/rh/devtoolset-8; do
+    for dt_dir in /opt/rh/devtoolset-11 /opt/rh/devtoolset-9 /opt/rh/devtoolset-8; do
         [ -d "$dt_dir" ] || continue
         dt_version="$(basename "$dt_dir" | sed 's/devtoolset-//')"
         break
