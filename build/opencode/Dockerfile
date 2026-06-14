@@ -53,3 +53,7 @@ RUN mkdir -p /output/lib /output/bin \
 COPY opencode     /output/bin/opencode
 COPY opencode.bin /output/bin/opencode.bin
 RUN chmod +x /output/bin/opencode /output/bin/opencode.bin /output/lib/opencode
+
+# ── Export only /output/ (excludes Alpine rootfs from type=local output) ──────
+FROM scratch
+COPY --from=builder /output/ /

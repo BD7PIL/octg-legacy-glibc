@@ -145,18 +145,18 @@ find_free_token() {
 kill_pg() {
     local pid=$1 to=${2:-10}
     [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null && return 0
-    # Kill the process group (PGID may differ from PID when launched via nohup)
     local pgid
     pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ') || true
-    if [ -n "$pgid" ] && [ "$pgid" != "$pid" ]; then
+    if [ -n "$pgid" ]; then
         kill -- -"$pgid" 2>/dev/null || true
+    else
+        kill "$pid" 2>/dev/null || true
     fi
-    kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
     local e=0
     while kill -0 "$pid" 2>/dev/null && [ $e -lt $to ]; do sleep 1; e=$((e+1)); done
     if kill -0 "$pid" 2>/dev/null; then
         [ -n "$pgid" ] && kill -9 -- -"$pgid" 2>/dev/null || true
-        kill -9 -- -"$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+        kill -9 "$pid" 2>/dev/null || true
     fi
 }
 
@@ -250,9 +250,9 @@ cmd_start() {
     # Clean stale settings.json from previous project (only if dir changed)
     if [ -f "$bot_cf/settings.json" ]; then
         local old_wd
-        old_wd=$(python3 -c "
-import json
-d=json.load(open('$bot_cf/settings.json','r',encoding='utf-8'))
+        old_wd=$(OCTG_BOT_CF="$bot_cf" python3 -c "
+import os, json
+d=json.load(open(os.environ['OCTG_BOT_CF']+'/settings.json','r',encoding='utf-8'))
 cp=d.get('currentProject')
 print(cp.get('worktree','') if cp else '')" 2>/dev/null || true)
         if [ -n "$old_wd" ] && [ "$old_wd" != "$wd" ]; then
@@ -368,11 +368,17 @@ while true; do
     if [ "$((_OC_EXIT))" -eq 143 ] || [ "$((_OC_EXIT))" -eq 137 ]; then
         # SIGTERM or SIGKILL → bot's /opencode-stop, don't restart
         echo "[octg:$_PORT] opencode terminated by SIGTERM/SIGKILL, waiting for bot..."
+        _TO=0
         while kill -0 "$_BOT_PID" 2>/dev/null; do
             _NEW_PID=$(ss -ltnp "sport = :$_PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1 || true)
             if [ -n "$_NEW_PID" ] && [ "$_NEW_PID" != "$_OC_PID" ]; then
                 echo "[octg:$_PORT] Taking over new opencode (PID=$_NEW_PID)"
                 _OC_PID="$_NEW_PID"
+                break
+            fi
+            _TO=$((_TO+1))
+            if [ "$_TO" -ge 30 ]; then
+                echo "[octg:$_PORT] Takeover timed out after 60s, falling through"
                 break
             fi
             sleep 2
@@ -420,7 +426,7 @@ WRPEOF
     # Smart ready detection (up to 120s, typically 5-15s)
     echo -n "   Waiting for bot to come online..."
     local w=0
-    while [ $w -lt 60 ]; do  # 60 * 2s = 120s max
+    while [ $w -lt 120 ]; do  # 120 * 1s sleep = 120s max
         if grep -qE "Bot.*started|Telegram bot is ready|polling|ready to handle" "$OCTG_STATE_DIR/log-${port}.out" 2>/dev/null; then
             echo " OK"
             break
@@ -435,7 +441,7 @@ WRPEOF
         fi
         sleep 2; w=$((w+2)); printf "."
     done
-    [ $w -ge 60 ] && echo " (timeout, continuing)"
+    [ $w -ge 120 ] && echo " (timeout, continuing)"
 
     echo "Instance started"
     echo "   PID: $wpid | Port: $port | Bot: $bnum | Dir: $wd | Mode: $mode"

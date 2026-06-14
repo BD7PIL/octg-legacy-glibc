@@ -52,3 +52,7 @@ RUN mkdir -p /output/node/bin \
     && cp -r dist /output/ \
     && cp package.json /output/ \
     && cp -r node_modules /output/
+
+# ── Export only /output/ (excludes CentOS rootfs from type=local output) ──────
+FROM scratch
+COPY --from=builder /output/ /
