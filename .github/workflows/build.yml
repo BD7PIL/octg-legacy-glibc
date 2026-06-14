@@ -28,12 +28,15 @@ jobs:
 
       - id: versions
         name: Detect latest versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # opencode: latest GitHub release
           if [ -n "${{ inputs.opencode_version }}" ]; then
             OC_VER="${{ inputs.opencode_version }}"
           else
-            OC_VER=$(curl -sf https://api.github.com/repos/anomalyco/opencode/releases/latest \
+            OC_VER=$(curl -sf -H "Authorization: token $GH_TOKEN" \
+                     https://api.github.com/repos/anomalyco/opencode/releases/latest \
                      | jq -r '.tag_name' | sed 's/^v//')
           fi
 
