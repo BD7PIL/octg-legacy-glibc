@@ -51,12 +51,14 @@ fi
 
 # ── Test 4: Node.js runtime ──────────────────────────────────────────────────
 echo "=== Test 4: Node.js runtime ==="
-NODE_VER=$(node/bin/node --version 2>/dev/null || true)
-if [ -n "$NODE_VER" ] && echo "$NODE_VER" | grep -q "^v20"; then
+echo "  ldd output:"
+ldd node/bin/node 2>&1 | head -10 | sed 's/^/    /'
+NODE_VER=$(node/bin/node --version 2>&1 || true)
+if echo "$NODE_VER" | grep -q "^v20"; then
     echo "  Node.js $NODE_VER"
     pass
 else
-    fail "Node.js not working or wrong version: $NODE_VER"
+    fail "Node.js not working: $NODE_VER"
 fi
 
 # ── Test 5: Bot files present ────────────────────────────────────────────────
