@@ -14,9 +14,9 @@ RUN sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-*.repo \
     && sed -i 's|^#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo
 
 # ── Install build tools ──────────────────────────────────────────────────────
-RUN yum install -y centos-release-scl \
-    && sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-*.repo \
-    && sed -i 's|^#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo \
+# Write SCL repo config directly (avoid centos-release-scl which triggers
+# yum metadata refresh on dead mirrorlist before sed can fix it)
+RUN printf '[centos-sclo-rh]\nname=CentOS-7 - SCLo rh\nbaseurl=http://vault.centos.org/7.9.2009/sclo/$basearch/rh/\ngpgcheck=0\nenabled=1\n\n[centos-sclo-sclo]\nname=CentOS-7 - SCLo sclo\nbaseurl=http://vault.centos.org/7.9.2009/sclo/$basearch/sclo/\ngpgcheck=0\nenabled=1\n' > /etc/yum.repos.d/CentOS-SCLo.repo \
     && yum install -y \
         devtoolset-8-gcc \
         devtoolset-8-gcc-c++ \

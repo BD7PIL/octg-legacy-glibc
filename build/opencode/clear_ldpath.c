@@ -1,14 +1,31 @@
-/*
- * clear_ldpath.c — Statically linked LD_PRELOAD shim.
- *
- * When loaded via LD_PRELOAD, the constructor unsets LD_PRELOAD so it does
- * not propagate to child processes.  Compiled as a statically linked .so
- * (musl-gcc -shared -static) so it has zero external dependencies.
- */
+extern char **environ;
 
-#include <stdlib.h>
+static int str_len(const char *s) {
+    int n = 0;
+    while (s[n]) n++;
+    return n;
+}
+
+static int prefix_match(const char *entry, const char *name, int name_len) {
+    int i;
+    for (i = 0; i < name_len; i++) {
+        if (entry[i] != name[i]) return 0;
+    }
+    return entry[name_len] == '=';
+}
+
+static void env_unset(const char *name) {
+    int name_len = str_len(name);
+    int i, j;
+    if (!environ) return;
+    for (i = 0, j = 0; environ[i]; i++) {
+        if (!prefix_match(environ[i], name, name_len))
+            environ[j++] = environ[i];
+    }
+    environ[j] = 0;
+}
 
 __attribute__((constructor))
-static void clear_preload(void) {
-    unsetenv("LD_PRELOAD");
+static void clean_env(void) {
+    env_unset("LD_PRELOAD");
 }
