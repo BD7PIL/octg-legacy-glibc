@@ -121,6 +121,14 @@ prompt_config() {
         done
         echo "OCTG_ALLOWED_USER_ID=${user_id}"
         echo "OPENCODE_SERVER_PASSWORD=${server_pw}"
+        if [ "${#tokens[@]}" -gt 2 ]; then
+            local _ports=""
+            for i in "${!tokens[@]}"; do
+                [ -n "$_ports" ] && _ports+=" "
+                _ports+="$((4096 + i))"
+            done
+            echo "OCTG_PORTS=\"${_ports}\""
+        fi
         echo ""
         echo "# PATH for bundled binaries"
         echo "export PATH=\"${SCRIPT_DIR}/bin:${SCRIPT_DIR}/node/bin:\$PATH\""
