@@ -37,7 +37,7 @@ RUN patchelf --set-interpreter /tmp/.octg-ld/ld-musl-x86_64.so.1 opencode
 
 # ── Compile clear_ldpath.so (statically linked, zero external deps) ──────────
 COPY clear_ldpath.c /tmp/build/clear_ldpath.c
-RUN musl-gcc -shared -static -o clear_ldpath.so clear_ldpath.c
+RUN gcc -shared -static -o clear_ldpath.so clear_ldpath.c
 
 # ── Collect musl runtime libraries ───────────────────────────────────────────
 # ld-musl-x86_64.so.1 from /lib/

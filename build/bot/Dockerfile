@@ -15,6 +15,8 @@ RUN sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-*.repo \
 
 # ── Install build tools ──────────────────────────────────────────────────────
 RUN yum install -y centos-release-scl \
+    && sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-*.repo \
+    && sed -i 's|^#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo \
     && yum install -y \
         devtoolset-8-gcc \
         devtoolset-8-gcc-c++ \
