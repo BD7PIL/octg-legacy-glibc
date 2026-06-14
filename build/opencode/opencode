@@ -1,0 +1,38 @@
+#!/bin/sh
+# =============================================================================
+# Wrapper script to run opencode with bundled musl libraries.
+# This enables running on systems with older GLIBC versions (e.g. RHEL7).
+#
+# The binary is patched (via patchelf) to use /tmp/.octg-ld/ld-musl-x86_64.so.1
+# as its ELF interpreter.  The musl linker resolves its .path file relative to
+# its grandparent directory (second-to-last "/" in its own path).  Since the
+# interpreter symlink is at /tmp/.octg-ld/..., the grandparent is /tmp, so the
+# .path file goes at /tmp/etc/ld-musl-x86_64.path.
+# =============================================================================
+
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# ── Set up the musl loader symlink and library path file ─────────────────────
+LOADER_DIR="/tmp/.octg-ld"
+LOADER_PATH="${LOADER_DIR}/ld-musl-x86_64.so.1"
+MUSL_PATH_FILE="/tmp/etc/ld-musl-x86_64.path"
+LIB_DIR="${SCRIPT_DIR}/lib"
+
+if [ ! -e "$LOADER_PATH" ] || [ "$(readlink -f "$LOADER_PATH" 2>/dev/null)" != "${LIB_DIR}/ld-musl-x86_64.so.1" ]; then
+    mkdir -p "$LOADER_DIR" 2>/dev/null
+    ln -sf "${LIB_DIR}/ld-musl-x86_64.so.1" "$LOADER_PATH" 2>/dev/null
+fi
+if [ ! -f "$MUSL_PATH_FILE" ] || [ "$(cat "$MUSL_PATH_FILE" 2>/dev/null)" != "$LIB_DIR" ]; then
+    mkdir -p /tmp/etc 2>/dev/null
+    printf '%s' "$LIB_DIR" > "$MUSL_PATH_FILE" 2>/dev/null
+fi
+
+# ── Intercept "serve" → "web --hostname=0.0.0.0" ────────────────────────────
+# opencode-telegram-bot calls `opencode serve`; we translate to `web` with
+# 0.0.0.0 binding for VM/NAT access. All other commands pass through.
+if [ "${1:-}" = "serve" ]; then
+    shift
+    exec "${SCRIPT_DIR}/bin/opencode.bin" web --hostname=0.0.0.0 "$@"
+fi
+
+exec "${SCRIPT_DIR}/bin/opencode.bin" "$@"

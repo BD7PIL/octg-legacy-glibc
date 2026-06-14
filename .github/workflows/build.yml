@@ -1,0 +1,210 @@
+name: Build and Release
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # Daily at 6 AM UTC
+  workflow_dispatch:        # Manual trigger
+    inputs:
+      opencode_version:
+        description: 'opencode version (e.g. 1.17.4)'
+        required: false
+      bot_version:
+        description: 'Bot version (e.g. 0.21.1)'
+        required: false
+
+jobs:
+  # ===========================================================================
+  # 1. Detect latest versions
+  # ===========================================================================
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      opencode_version: ${{ steps.versions.outputs.opencode }}
+      bot_version: ${{ steps.versions.outputs.bot }}
+      tag: ${{ steps.versions.outputs.tag }}
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: versions
+        name: Detect latest versions
+        run: |
+          # opencode: latest GitHub release
+          if [ -n "${{ inputs.opencode_version }}" ]; then
+            OC_VER="${{ inputs.opencode_version }}"
+          else
+            OC_VER=$(curl -sf https://api.github.com/repos/anomalyco/opencode/releases/latest \
+                     | jq -r '.tag_name' | sed 's/^v//')
+          fi
+
+          # bot: latest npm version
+          if [ -n "${{ inputs.bot_version }}" ]; then
+            BOT_VER="${{ inputs.bot_version }}"
+          else
+            BOT_VER=$(npm view @grinev/opencode-telegram-bot version 2>/dev/null)
+          fi
+
+          if [ -z "$OC_VER" ] || [ -z "$BOT_VER" ]; then
+            echo "ERROR: Failed to detect versions (opencode=$OC_VER bot=$BOT_VER)"
+            exit 1
+          fi
+
+          echo "opencode=$OC_VER"  >> $GITHUB_OUTPUT
+          echo "bot=$BOT_VER"      >> $GITHUB_OUTPUT
+          echo "tag=v${OC_VER}-${BOT_VER}" >> $GITHUB_OUTPUT
+          echo "Detected: opencode=$OC_VER  bot=$BOT_VER  tag=v${OC_VER}-${BOT_VER}"
+
+      - id: check
+        name: Check if release already exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.versions.outputs.tag }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — skipping."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Release $TAG not found — will build."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ===========================================================================
+  # 2. Build opencode (Alpine/musl packaging)
+  # ===========================================================================
+  build-opencode:
+    needs: detect
+    if: needs.detect.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build opencode package
+        uses: docker/build-push-action@v6
+        with:
+          context: build/opencode
+          file: build/opencode/Dockerfile
+          build-args: |
+            OPENCODE_VERSION=${{ needs.detect.outputs.opencode_version }}
+          outputs: type=local,dest=artifacts/opencode
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-pkg
+          path: artifacts/opencode/
+
+  # ===========================================================================
+  # 3. Build bot (CentOS 7 / glibc 2.17)
+  # ===========================================================================
+  build-bot:
+    needs: detect
+    if: needs.detect.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build bot
+        uses: docker/build-push-action@v6
+        with:
+          context: build/bot
+          file: build/bot/Dockerfile
+          build-args: |
+            BOT_VERSION=${{ needs.detect.outputs.bot_version }}
+          outputs: type=local,dest=artifacts/bot
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-pkg
+          path: artifacts/bot/
+
+  # ===========================================================================
+  # 4. Package tarball + test on CentOS 7
+  # ===========================================================================
+  package:
+    needs: [detect, build-opencode, build-bot]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download opencode artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: opencode-pkg
+          path: staging/octg/
+
+      - name: Download bot artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bot-pkg
+          path: staging/bot/
+
+      - name: Assemble tarball
+        run: |
+          # Copy shared files
+          cp octg                    staging/octg/
+          cp scripts/setup.sh        staging/octg/
+          cp LICENSE                  staging/octg/
+          chmod +x staging/octg/octg staging/octg/setup.sh
+
+          # Copy node binary from bot artifact
+          cp -r staging/bot/node         staging/octg/node
+
+          # Copy bot files into bot/
+          mkdir -p staging/octg/bot
+          cp -r staging/bot/dist        staging/octg/bot/
+          cp    staging/bot/package.json staging/octg/bot/
+          cp -r staging/bot/node_modules staging/octg/bot/
+
+          # Create bin/opencode-telegram-bot wrapper
+          mkdir -p staging/octg/bin
+          cat > staging/octg/bin/opencode-telegram-bot << 'WRAPPER'
+          #!/bin/sh
+          SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+          exec "${SCRIPT_DIR}/node/bin/node" "${SCRIPT_DIR}/bot/dist/cli.js" "$@"
+          WRAPPER
+          chmod +x staging/octg/bin/opencode-telegram-bot
+
+          # Ensure all scripts are executable
+          chmod +x staging/octg/bin/opencode \
+                   staging/octg/bin/opencode.bin
+
+          # Create tarball
+          tar czf octg-legacy-glibc.tar.gz -C staging octg/
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarball
+          path: octg-legacy-glibc.tar.gz
+
+      - name: Test in CentOS 7
+        run: |
+          docker build -f build/test/Dockerfile.centos7 -t octg-test .
+          docker run --rm octg-test
+
+  # ===========================================================================
+  # 5. Create GitHub Release
+  # ===========================================================================
+  release:
+    needs: [detect, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: tarball
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.detect.outputs.tag }}
+          name: ${{ needs.detect.outputs.tag }}
+          files: octg-legacy-glibc.tar.gz
+          generate_release_notes: true

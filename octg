@@ -1,0 +1,691 @@
+#!/bin/bash
+# =============================================================================
+# octg — OpenCode Telegram Group Instance Manager
+# =============================================================================
+#
+# Usage:
+#   octg start <work_dir> [web|server]  Start a new instance (default: web)
+#   octg stop <port|all>                Stop instance(es)
+#   octg restart <port>                 Restart instance
+#   octg list                           List all instances
+#   octg status [port]                  Show instance details
+#   octg restore                        Restore previously running instances
+#   octg help                           Show this help
+#
+# Configuration (~/.config/octg/config.env):
+#   OCTG_BOT_TOKEN_1, _2, ... _N        Bot tokens (at least 1 required)
+#   OCTG_ALLOWED_USER_ID                Telegram user ID (required)
+#   OCTG_OPENCODE_BIN                   Path to opencode binary (required)
+#   OCTG_PORTS                          Available ports (default "4096 4097")
+#   OCTG_STATE_DIR                      State directory (default ~/.config/octg)
+#   OCTG_RESTART_DELAY                  Restart delay in seconds (default 5)
+#   OCTG_CALLER_PORT                    Current bot port (stop all guard, auto)
+#   OCTG_NVM_DIR                        NVM path (default ~/.nvm)
+#   OCTG_DEVTOOLSET                     devtoolset path (default auto)
+#
+# Optional (bot .env, omitted if unset):
+#   OCTG_MODEL_PROVIDER                 Override default model provider
+#   OCTG_MODEL_ID                       Override default model ID
+#   OCTG_BOT_LOCALE                     Override bot locale (e.g. en, zh)
+#   OPENCODE_SERVER_PASSWORD            Server password (warning if empty)
+# =============================================================================
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Source configuration file
+# ---------------------------------------------------------------------------
+OCTG_CONFIG_FILE="${OCTG_CONFIG_FILE:-$HOME/.config/octg/config.env}"
+if [ -f "$OCTG_CONFIG_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$OCTG_CONFIG_FILE"
+    set +a
+fi
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+OCTG_PORTS="${OCTG_PORTS:-4096 4097}"
+OCTG_STATE_DIR="${OCTG_STATE_DIR:-$HOME/.config/octg}"
+OCTG_RESTART_DELAY="${OCTG_RESTART_DELAY:-5}"
+OCTG_NVM_DIR="${OCTG_NVM_DIR:-$HOME/.nvm}"
+OCTG_CALLER_PORT="${OCTG_CALLER_PORT:-}"
+OCTG_DEVTOOLSET="${OCTG_DEVTOOLSET:-auto}"
+OCTG_RESTORE_DIR="${OCTG_STATE_DIR}/autorestore"
+
+# ---------------------------------------------------------------------------
+# Collect bot tokens dynamically (OCTG_BOT_TOKEN_1, _2, ..., _N)
+# ---------------------------------------------------------------------------
+BOT_TOKENS=()
+_i=1
+while true; do
+    _var="OCTG_BOT_TOKEN_${_i}"
+    _val="${!_var:-}"
+    if [ -z "$_val" ]; then
+        break
+    fi
+    BOT_TOKENS+=("$_val")
+    _i=$((_i+1))
+done
+unset _i _var _val
+
+# ---------------------------------------------------------------------------
+# Required variable checks
+# ---------------------------------------------------------------------------
+if [ ${#BOT_TOKENS[@]} -eq 0 ]; then
+    echo "ERROR: No bot tokens found."
+    echo "  Set OCTG_BOT_TOKEN_1 (and optionally _2, _3, ...) in:"
+    echo "    $OCTG_CONFIG_FILE"
+    exit 1
+fi
+
+for var in OCTG_ALLOWED_USER_ID OCTG_OPENCODE_BIN; do
+    if [ -z "${!var:-}" ]; then
+        echo "ERROR: Missing required variable: $var"
+        echo "  Configure it in: $OCTG_CONFIG_FILE"
+        exit 1
+    fi
+done
+
+if [ ! -x "$OCTG_OPENCODE_BIN" ]; then
+    echo "ERROR: opencode binary not found or not executable: $OCTG_OPENCODE_BIN"
+    exit 1
+fi
+
+read -ra PORTS <<< "$OCTG_PORTS"
+
+# ---------------------------------------------------------------------------
+# Utility functions
+# ---------------------------------------------------------------------------
+
+ensure_state_dir() { mkdir -p "$OCTG_STATE_DIR"; }
+
+# Safely read a KEY=VALUE field from a file (pipefail-safe)
+get_field() { grep "^${1}=" "$2" 2>/dev/null | cut -d= -f2- || true; }
+
+sf()  { echo "$OCTG_STATE_DIR/instance-${1}.env"; }
+pf()  { echo "$OCTG_STATE_DIR/instance-${1}.pid"; }
+wf()  { echo "$OCTG_STATE_DIR/run-${1}.sh"; }
+bcf() { echo "$OCTG_STATE_DIR/bot-${1}"; }
+
+port_in_use() {
+    ss -tlnp 2>/dev/null | grep -q ":${1} " && return 0 || return 1
+}
+
+find_free_port() {
+    for p in "${PORTS[@]}"; do
+        port_in_use "$p" || { echo "$p"; return 0; }
+    done
+    return 1
+}
+
+token_idx() {
+    for i in "${!BOT_TOKENS[@]}"; do
+        [ "${BOT_TOKENS[$i]}" = "$1" ] && { echo $((i+1)); return 0; }
+    done
+    echo 0; return 1
+}
+
+find_free_token() {
+    for i in "${!BOT_TOKENS[@]}"; do
+        local tok="${BOT_TOKENS[$i]}" found=false
+        for p in "${PORTS[@]}"; do
+            local bot_cf; bot_cf=$(bcf "$p")
+            [ ! -f "$bot_cf/.env" ] && continue
+            local stored
+            stored=$(grep '^TELEGRAM_BOT_TOKEN=' "$bot_cf/.env" 2>/dev/null | cut -d= -f2-) || true
+            [ "$stored" = "$tok" ] && { found=true; break; }
+        done
+        $found || { echo "$tok"; return 0; }
+    done
+    return 1
+}
+
+kill_pg() {
+    local pid=$1 to=${2:-10}
+    [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null && return 0
+    # Kill the process group (PGID may differ from PID when launched via nohup)
+    local pgid
+    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ') || true
+    if [ -n "$pgid" ] && [ "$pgid" != "$pid" ]; then
+        kill -- -"$pgid" 2>/dev/null || true
+    fi
+    kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    local e=0
+    while kill -0 "$pid" 2>/dev/null && [ $e -lt $to ]; do sleep 1; e=$((e+1)); done
+    if kill -0 "$pid" 2>/dev/null; then
+        [ -n "$pgid" ] && kill -9 -- -"$pgid" 2>/dev/null || true
+        kill -9 -- -"$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+    fi
+}
+
+# Kill all processes associated with a port (wrapper, opencode, bot)
+# Used when wrapper is dead but detached/orphaned processes survive
+force_cleanup_port() {
+    local port=$1 killed=0
+
+    # 1. Kill wrapper (run-{port}.sh) — may be stuck in retry loop
+    local wpid
+    for wpid in $(pgrep -f "run-${port}\\.sh" 2>/dev/null); do
+        kill_pg "$wpid" 5 2>/dev/null && killed=$((killed+1)) || true
+    done
+
+    # 2. Kill opencode listening on this port
+    local pids
+    pids=$(ss -ltnp "sport = :${port}" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u)
+    for p in $pids; do
+        kill_pg "$p" 5 2>/dev/null && killed=$((killed+1)) || true
+    done
+
+    # 3. Kill opencode-telegram-bot associated with this port
+    local bpid
+    for bpid in $(pgrep -f "opencode-telegram-bot" 2>/dev/null); do
+        if tr '\0' '\n' < /proc/$bpid/environ 2>/dev/null \
+                | grep -q "OCTG_CALLER_PORT=${port}\|OPENCODE_API_URL=http://localhost:${port}"; then
+            kill_pg "$bpid" 5 2>/dev/null && killed=$((killed+1)) || true
+        fi
+    done
+
+    return $killed
+}
+
+# ---------------------------------------------------------------------------
+# Core commands
+# ---------------------------------------------------------------------------
+
+cmd_start() {
+    local wd="${1:-}" mode="${2:-web}" fixed_port="${3:-}"
+    [ -z "$wd" ] && { echo "ERROR: Usage: octg start <work_dir> [web|server]"; return 1; }
+    # Expand ~ to $HOME (Telegram ! commands don't shell-expand ~)
+    wd="${wd/#\~/$HOME}"
+    [ ! -d "$wd" ] && { echo "ERROR: Directory not found: $wd"; return 1; }
+    [ "$mode" != "web" ] && [ "$mode" != "server" ] && { echo "ERROR: Mode must be 'web' or 'server'"; return 1; }
+
+    ensure_state_dir
+
+    # Warn if server password is empty (unprotected API)
+    if [ -z "${OPENCODE_SERVER_PASSWORD:-}" ]; then
+        echo "WARNING: OPENCODE_SERVER_PASSWORD is empty — the opencode API is unprotected."
+    fi
+
+    local port token bnum
+    if [ -n "$fixed_port" ]; then
+        # Restore mode: bind to specific port
+        if port_in_use "$fixed_port"; then
+            echo "ERROR: Port $fixed_port is already in use"
+            return 1
+        fi
+        port="$fixed_port"
+        # Clean stale bot config left from dirty shutdown,
+        # otherwise find_free_token() sees the old token as "busy"
+        rm -f "$(bcf "$port")/.env"
+    else
+        port=$(find_free_port) || { echo "ERROR: All ports in use: ${PORTS[*]}"; return 1; }
+        # Clean stale bot config from previous dirty stop
+        rm -f "$(bcf "$port")/.env"
+    fi
+    token=$(find_free_token) || { echo "ERROR: All bot tokens are assigned"; return 1; }
+    bnum=$(token_idx "$token")
+
+    local pid_f state_f wrap_f bot_cf
+    pid_f=$(pf "$port"); state_f=$(sf "$port")
+    wrap_f=$(wf "$port"); bot_cf=$(bcf "$port")
+
+    if [ -f "$pid_f" ]; then
+        local opid; opid=$(cat "$pid_f")
+        if [ -n "$opid" ] && kill -0 "$opid" 2>/dev/null; then
+            echo "WARNING: Port $port already running (PID: $opid). Use: octg restart $port"
+            return 1
+        fi
+        rm -f "$pid_f"
+    fi
+
+    echo "Starting instance..."
+    echo "   Port: $port | Dir: $wd | Mode: $mode | Bot: $bnum"
+
+    # Bot configuration
+    mkdir -p "$bot_cf"
+
+    # Clean stale settings.json from previous project (only if dir changed)
+    if [ -f "$bot_cf/settings.json" ]; then
+        local old_wd
+        old_wd=$(python3 -c "
+import json
+d=json.load(open('$bot_cf/settings.json','r',encoding='utf-8'))
+cp=d.get('currentProject')
+print(cp.get('worktree','') if cp else '')" 2>/dev/null || true)
+        if [ -n "$old_wd" ] && [ "$old_wd" != "$wd" ]; then
+            rm -f "$bot_cf/settings.json"
+        fi
+    fi
+
+    # Build bot .env — optional vars only written if set
+    {
+        echo "TELEGRAM_BOT_TOKEN=${token}"
+        echo "TELEGRAM_ALLOWED_USER_ID=${OCTG_ALLOWED_USER_ID}"
+        echo "OPENCODE_API_URL=http://localhost:${port}"
+        echo "OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-}"
+        [ -n "${OCTG_MODEL_PROVIDER:-}" ] && echo "OPENCODE_MODEL_PROVIDER=${OCTG_MODEL_PROVIDER}"
+        [ -n "${OCTG_MODEL_ID:-}" ] && echo "OPENCODE_MODEL_ID=${OCTG_MODEL_ID}"
+        [ -n "${OCTG_BOT_LOCALE:-}" ] && echo "BOT_LOCALE=${OCTG_BOT_LOCALE}"
+        echo "OCTG_CALLER_PORT=${port}"
+    } > "$bot_cf/.env"
+    chmod 600 "$bot_cf/.env"
+
+    # Instance state
+    cat > "$state_f" << STEOF
+PORT=${port}
+BOT_TOKEN=${token}
+BOT_NUM=${bnum}
+WORK_DIR=${wd}
+MODE=${mode}
+BOT_CONFIG_DIR=${bot_cf}
+STARTED_AT=$(date '+%Y-%m-%d %H:%M:%S')
+STEOF
+
+    # Wrapper script
+    cat > "$wrap_f" << 'WRPEOF'
+#!/bin/bash
+set -euo pipefail
+_PORT="__PORT__"
+_MODE="__MODE__"
+_WD="__WD__"
+_BOT_CF="__BOT_CF__"
+_PID_F="__PID_F__"
+_STATE_F="__STATE_F__"
+_STOP="__STOP__"
+_NVM="__NVM__"
+_DELAY="__DELAY__"
+_OC="__OC__"
+_DT="__DT__"
+export OCTG_CALLER_PORT="${_PORT}"
+_LOG="__STATE_DIR__/log-${_PORT}.out"
+
+_OC_PID="" _BOT_PID=""
+cleanup() { kill -9 "$_OC_PID" "$_BOT_PID" 2>/dev/null || true; wait "$_OC_PID" "$_BOT_PID" 2>/dev/null || true; rm -f "$_STOP" "$_PID_F" 2>/dev/null; exit 0; }
+trap cleanup SIGTERM SIGINT
+
+# Write PID file once — keep it alive for the entire wrapper lifetime
+echo $$ > "$_PID_F"
+
+[ -f "$_NVM/nvm.sh" ] && { source "$_NVM/nvm.sh"; nvm use 20 >/dev/null 2>&1 || true; }
+
+if [ -n "$_DT" ] && [ "$_DT" != "auto" ] && [ -f /opt/rh/$_DT/enable ]; then
+    source /opt/rh/$_DT/enable
+fi
+
+while true; do
+    [ -f "$_STOP" ] && cleanup
+    cd "$_WD"
+
+    # ── Detect existing opencode (skip start when /opencode-start takes over) ──
+    _EXISTING_OC=$(ss -ltnp "sport = :$_PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1 || true)
+    if [ -n "$_EXISTING_OC" ] && kill -0 "$_EXISTING_OC" 2>/dev/null; then
+        _OC_PID="$_EXISTING_OC"
+        echo "[octg:$_PORT] Detected existing opencode (PID=$_OC_PID)"
+    else
+        if [ "$_MODE" = "web" ]; then
+            "$_OC" web --port "$_PORT" --hostname=0.0.0.0 &
+        else
+            "$_OC" serve --port "$_PORT" &
+        fi
+        _OC_PID=$!
+
+        _r=0
+        while [ $_r -lt 30 ]; do
+            curl -s "http://localhost:${_PORT}/health" >/dev/null 2>&1 && break
+            sleep 1; _r=$((_r+1))
+        done
+        if ! kill -0 "$_OC_PID" 2>/dev/null; then
+            echo "[octg:$_PORT] opencode failed to start, retrying in ${_DELAY}s"
+            sleep "$_DELAY"; continue
+        fi
+    fi
+
+    # ── Detect existing bot (skip start when taking over) ──
+    if [ -n "$_BOT_PID" ] && kill -0 "$_BOT_PID" 2>/dev/null; then
+        echo "[octg:$_PORT] Reusing existing bot (PID=$_BOT_PID)"
+    else
+        export OPENCODE_TELEGRAM_HOME="$_BOT_CF"
+        opencode-telegram-bot start &
+        _BOT_PID=$!
+    fi
+
+    echo "[octg:$_PORT] Ready (opencode=$_OC_PID bot=$_BOT_PID)"
+
+    # ── Monitor loop ──
+    while kill -0 "$_OC_PID" 2>/dev/null && kill -0 "$_BOT_PID" 2>/dev/null; do
+        sleep 2
+    done
+
+    # ── Exit code detection: distinguish SIGTERM/SIGKILL (intentional) vs crash ──
+    _OC_EXIT=0
+    if ! kill -0 "$_OC_PID" 2>/dev/null; then
+        wait "$_OC_PID" 2>/dev/null || _OC_EXIT=$?
+    fi
+
+    if [ "$((_OC_EXIT))" -eq 143 ] || [ "$((_OC_EXIT))" -eq 137 ]; then
+        # SIGTERM or SIGKILL → bot's /opencode-stop, don't restart
+        echo "[octg:$_PORT] opencode terminated by SIGTERM/SIGKILL, waiting for bot..."
+        while kill -0 "$_BOT_PID" 2>/dev/null; do
+            _NEW_PID=$(ss -ltnp "sport = :$_PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1 || true)
+            if [ -n "$_NEW_PID" ] && [ "$_NEW_PID" != "$_OC_PID" ]; then
+                echo "[octg:$_PORT] Taking over new opencode (PID=$_NEW_PID)"
+                _OC_PID="$_NEW_PID"
+                break
+            fi
+            sleep 2
+        done
+        if kill -0 "$_OC_PID" 2>/dev/null; then
+            continue
+        fi
+        kill "$_OC_PID" "$_BOT_PID" 2>/dev/null || true
+        wait "$_OC_PID" "$_BOT_PID" 2>/dev/null || true
+        echo "[octg:$_PORT] Bot exited, restarting in ${_DELAY}s"
+        sleep "$_DELAY"; continue
+    fi
+
+    # Non-signal termination → real crash or bot death, kill both and restart
+    kill -9 "$_OC_PID" "$_BOT_PID" 2>/dev/null || true
+    wait "$_OC_PID" "$_BOT_PID" 2>/dev/null || true
+    [ -f "$_STOP" ] && cleanup
+    echo "[octg:$_PORT] Abnormal exit, restarting in ${_DELAY}s"
+    sleep "$_DELAY"
+done
+WRPEOF
+
+    # Replace placeholders with actual values (avoids complex heredoc escaping)
+    sed -i \
+        -e "s|__PORT__|${port}|g" \
+        -e "s|__MODE__|${mode}|g" \
+        -e "s|__WD__|${wd}|g" \
+        -e "s|__BOT_CF__|${bot_cf}|g" \
+        -e "s|__PID_F__|${pid_f}|g" \
+        -e "s|__STATE_F__|${state_f}|g" \
+        -e "s|__STOP__|${OCTG_STATE_DIR}/.stop-${port}|g" \
+        -e "s|__NVM__|${OCTG_NVM_DIR}|g" \
+        -e "s|__DELAY__|${OCTG_RESTART_DELAY}|g" \
+        -e "s|__OC__|${OCTG_OPENCODE_BIN}|g" \
+        -e "s|__DT__|${OCTG_DEVTOOLSET}|g" \
+        -e "s|__STATE_DIR__|${OCTG_STATE_DIR}|g" \
+        "$wrap_f"
+    chmod +x "$wrap_f"
+
+    # Launch wrapper (setsid ensures new process group for clean kill)
+    setsid nohup "$wrap_f" > "$OCTG_STATE_DIR/log-${port}.out" 2>&1 &
+    local wpid=$!
+    echo "$wpid" > "$pid_f"
+
+    # Smart ready detection (up to 120s, typically 5-15s)
+    echo -n "   Waiting for bot to come online..."
+    local w=0
+    while [ $w -lt 60 ]; do  # 60 * 2s = 120s max
+        if grep -qE "Bot.*started|Telegram bot is ready|polling|ready to handle" "$OCTG_STATE_DIR/log-${port}.out" 2>/dev/null; then
+            echo " OK"
+            break
+        fi
+        # wrapper exited = startup failed
+        if ! kill -0 "$wpid" 2>/dev/null; then
+            echo ""
+            echo "ERROR: Startup failed. Recent log:"
+            tail -20 "$OCTG_STATE_DIR/log-${port}.out" 2>/dev/null
+            rm -f "$pid_f" "$state_f" "$wrap_f"
+            return 1
+        fi
+        sleep 2; w=$((w+2)); printf "."
+    done
+    [ $w -ge 60 ] && echo " (timeout, continuing)"
+
+    echo "Instance started"
+    echo "   PID: $wpid | Port: $port | Bot: $bnum | Dir: $wd | Mode: $mode"
+    echo "   Log: $OCTG_STATE_DIR/log-${port}.out"
+
+    # Persist for autorestore on reboot
+    mkdir -p "$OCTG_RESTORE_DIR"
+    printf 'WORK_DIR=%s\nMODE=%s\n' "$wd" "$mode" > "$OCTG_RESTORE_DIR/${port}"
+}
+
+cmd_stop() {
+    local t="${1:-}"
+    [ -z "$t" ] && { echo "ERROR: Usage: octg stop <port|all>"; return 1; }
+    ensure_state_dir
+    [ "$t" = "all" ] && { cmd_stop_all; return; }
+    [[ ! "$t" =~ ^[0-9]+$ ]] && { echo "ERROR: Invalid port: $t"; return 1; }
+
+    local port=$t pid_f sf mf wf bcf
+    pid_f=$(pf "$port"); sf=$(sf "$port")
+    mf="$OCTG_STATE_DIR/.stop-${port}"; wf=$(wf "$port"); bcf=$(bcf "$port")
+
+    local bn="?"
+    [ -f "$sf" ] && bn=$(get_field BOT_NUM "$sf")
+
+    # Try to stop via wrapper PID first
+    local stopped_via_wrapper=false
+    if [ -f "$pid_f" ]; then
+        local pid
+        pid=$(cat "$pid_f" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "Stopping [${port}] Bot ${bn}..."
+            touch "$mf"; kill_pg "$pid" 15
+            stopped_via_wrapper=true
+        fi
+    fi
+
+    # Always do port-level cleanup (handles orphaned/detached processes)
+    local orphan_count=0
+    force_cleanup_port "$port" || orphan_count=$?
+    if [ $orphan_count -gt 0 ]; then
+        if ! $stopped_via_wrapper; then
+            echo "Cleaned $orphan_count orphaned process(es) on [${port}]"
+        fi
+    fi
+
+    rm -f "$pid_f" "$sf" "$mf" "$wf" "$bcf/.env" "$OCTG_RESTORE_DIR/${port}"
+
+    if $stopped_via_wrapper; then
+        echo "Stopped [${port}]"
+    elif [ $orphan_count -gt 0 ]; then
+        echo "Cleaned orphans on [${port}]"
+    else
+        echo "No running instance on $port (residuals cleaned)"
+    fi
+}
+
+cmd_stop_all() {
+    ensure_state_dir
+    local stopped=0 skipped=0 caller="${OCTG_CALLER_PORT:-}"
+    for p in "${PORTS[@]}"; do
+        local pf; pf=$(pf "$p")
+        [ ! -f "$pf" ] && continue
+        local pid; pid=$(cat "$pf" 2>/dev/null)
+        [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null && { rm -f "$pf" "$(sf "$p")" "$(wf "$p")" "$(bcf "$p")/.env" "$OCTG_RESTORE_DIR/${p}"; continue; }
+        [ -n "$caller" ] && [ "$p" = "$caller" ] && { skipped=$((skipped+1)); continue; }
+        local mf="$OCTG_STATE_DIR/.stop-${p}"
+        touch "$mf"; kill_pg "$pid" 15
+        rm -f "$(wf "$p")" "$pf" "$mf" "$(sf "$p")" "$(bcf "$p")/.env" "$OCTG_RESTORE_DIR/${p}"
+        stopped=$((stopped+1))
+    done
+    [ $stopped -gt 0 ] && echo "Stopped $stopped instance(s)"
+    [ $skipped -gt 0 ] && echo "Preserved $skipped (current bot: $caller)"
+    [ $stopped -eq 0 ] && [ $skipped -eq 0 ] && echo "No running instances"
+    return 0
+}
+
+cmd_restart() {
+    local port="${1:-}"
+    [ -z "$port" ] && { echo "ERROR: Usage: octg restart <port>"; return 1; }
+    ensure_state_dir
+    local sf; sf=$(sf "$port")
+    [ ! -f "$sf" ] && { echo "ERROR: No known config for port $port"; return 1; }
+    local wd mode
+    wd=$(get_field WORK_DIR "$sf")
+    mode=$(get_field MODE "$sf")
+    [ -z "$wd" ] || [ -z "$mode" ] && { echo "ERROR: State file corrupted"; return 1; }
+    [ ! -d "$wd" ] && { echo "ERROR: Directory not found: $wd"; return 1; }
+    echo "Restarting [${port}]..."
+    local pf mf wf bcf
+    pf=$(pf "$port"); mf="$OCTG_STATE_DIR/.stop-${port}"
+    wf=$(wf "$port"); bcf=$(bcf "$port")
+    if [ -f "$pf" ]; then
+        local pid; pid=$(cat "$pf")
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            touch "$mf"; kill_pg "$pid" 15; sleep 2
+        fi
+        rm -f "$pf" "$mf" "$wf" "$sf" "$bcf/.env" "$OCTG_RESTORE_DIR/${port}"
+    fi
+    cmd_start "$wd" "$mode" "$port"
+}
+
+cmd_list() {
+    ensure_state_dir
+    echo "Instance Status:"
+    echo "───────────────────────────────────────────────"
+    local used_bots=""
+    for p in "${PORTS[@]}"; do
+        local sf; sf=$(sf "$p")
+        local pf; pf=$(pf "$p")
+        local running=false
+        local pid=""
+
+        # Check if actually running
+        if [ -f "$pf" ]; then
+            pid=$(cat "$pf" 2>/dev/null)
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                running=true
+            fi
+        fi
+
+        if [ -f "$sf" ] && $running; then
+            # Running instance
+            local bn wd mode sa
+            bn=$(get_field BOT_NUM "$sf")
+            wd=$(get_field WORK_DIR "$sf")
+            mode=$(get_field MODE "$sf")
+            sa=$(get_field STARTED_AT "$sf")
+            used_bots="$used_bots $bn"
+            local m=""
+            [ -n "${OCTG_CALLER_PORT:-}" ] && [ "$p" = "${OCTG_CALLER_PORT:-}" ] && m=" <- current"
+            printf "  [%s] Running   Bot %s  ->  %s  [%s]\n" "$p" "$bn" "$wd" "$mode"
+            printf "           PID: %s  Started: %s%s\n" "$pid" "$sa" "$m"
+        else
+            # Not running — check for orphaned processes on this port
+            local orphan=""
+            if port_in_use "$p"; then
+                orphan=" (port occupied by orphan process)"
+            fi
+            printf "  [%s] Idle%s\n" "$p" "$orphan"
+        fi
+    done
+    echo "───────────────────────────────────────────────"
+    # Available ports (no running octg instance)
+    local available_ports=""
+    for p in "${PORTS[@]}"; do
+        local pf; pf=$(pf "$p")
+        local pid=""
+        if [ -f "$pf" ]; then
+            pid=$(cat "$pf" 2>/dev/null)
+            [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && continue
+        fi
+        [ -n "$available_ports" ] && available_ports="$available_ports, "
+        available_ports="${available_ports}${p}"
+    done
+    # Available bots (not assigned to any running instance)
+    local available_bots=""
+    local total_bots=${#BOT_TOKENS[@]}
+    for i in $(seq 1 "$total_bots"); do
+        if [[ ! " $used_bots " =~ " $i " ]]; then
+            [ -n "$available_bots" ] && available_bots="$available_bots, "
+            available_bots="${available_bots}Bot $i"
+        fi
+    done
+    echo "  Available ports: ${available_ports:-none}"
+    echo "  Available bots:  ${available_bots:-none}"
+}
+
+cmd_status() {
+    local port="${1:-}"
+    [ -z "$port" ] && { cmd_list; return; }
+    ensure_state_dir
+    local sf pf; sf=$(sf "$port"); pf=$(pf "$port")
+    [ ! -f "$sf" ] && { echo "ERROR: No known instance on port $port"; return 1; }
+    echo "Status [${port}]:"
+    echo "───────────────────────────────────────────────"
+    local k v; while IFS='=' read -r k v; do
+        [ -z "$k" ] && continue; printf "  %s: %s\n" "$k" "$v"
+    done < "$sf"
+    echo ""
+    if [ -f "$pf" ]; then
+        local pid; pid=$(cat "$pf" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo "  Process: OK (PID: $pid)"; else echo "  Process: DEAD"; fi
+    else
+        echo "  Process: no PID file"
+    fi
+    port_in_use "$port" && echo "  Port:   LISTENING ($port)" || echo "  Port:   not listening"
+    local lf="$OCTG_STATE_DIR/log-${port}.out"
+    if [ -f "$lf" ]; then
+        echo "  Recent log:"; echo "  ---"; tail -5 "$lf" | sed 's/^/  /'; echo "  ---"
+    fi
+    echo "───────────────────────────────────────────────"
+}
+
+cmd_restore() {
+    ensure_state_dir
+    [ ! -d "$OCTG_RESTORE_DIR" ] && { echo "Nothing to restore"; return 0; }
+    local count=0 skipped=0
+    for rf in "$OCTG_RESTORE_DIR"/*; do
+        [ ! -f "$rf" ] && continue
+        local port wd mode
+        port=$(basename "$rf")
+        wd=$(get_field WORK_DIR "$rf")
+        mode=$(get_field MODE "$rf")
+        [ -z "$wd" ] || [ -z "$mode" ] && { echo "Skipping corrupt record: $port"; rm -f "$rf"; continue; }
+        # Skip if already running
+        local pid_f; pid_f=$(pf "$port")
+        if [ -f "$pid_f" ]; then
+            local opid; opid=$(cat "$pid_f" 2>/dev/null)
+            if [ -n "$opid" ] && kill -0 "$opid" 2>/dev/null; then
+                echo "Skip [${port}] — already running"
+                skipped=$((skipped+1))
+                continue
+            fi
+        fi
+        echo "Restoring [${port}] ${wd} (${mode})"
+        cmd_start "$wd" "$mode" "$port" && count=$((count+1)) || true
+        rm -f "$rf"
+    done
+    [ $count -gt 0 ] && echo "Restored ${count} instance(s)"
+    [ $skipped -gt 0 ] && echo "Skipped ${skipped} (already running)"
+    [ $count -eq 0 ] && [ $skipped -eq 0 ] && echo "Nothing to restore"
+    return 0
+}
+
+cmd_help() {
+    cat << 'HELP'
+octg — OpenCode Telegram Group Instance Manager
+
+Commands:
+  octg start <dir> [web|server]   Start a new instance (default: web, binds 0.0.0.0)
+  octg stop <port|all>            Stop instance (stop all preserves current bot)
+  octg restart <port>             Restart instance
+  octg list                       List all instances
+  octg status [port]              Show details
+  octg restore                    Restore previously running instances
+
+Usage in Telegram (use ! prefix to run shell commands):
+  !octg start /code/api           Start a web-mode instance
+  !octg stop all                  Stop all (preserves current bot)
+  !octg list                      List all instances
+HELP
+}
+
+case "${1:-}" in
+    start)   shift; cmd_start "${1:-}" "${2:-}" ;;
+    stop)    shift; cmd_stop "${1:-}" ;;
+    restart) shift; cmd_restart "${1:-}" ;;
+    list|ls) cmd_list ;;
+    status)  shift; cmd_status "${1:-}" ;;
+    help|--help|-h) cmd_help ;;
+    restore)  cmd_restore ;;
+    *) echo "ERROR: Unknown command: ${1:-<none>}"; echo ""; cmd_help; exit 1 ;;
+esac
