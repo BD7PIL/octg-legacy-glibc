@@ -24,6 +24,7 @@ RUN printf '[centos-sclo-rh]\nname=CentOS-7 - SCLo rh\nbaseurl=http://vault.cent
         git \
         curl \
         xz \
+        python3 \
     && yum clean all
 
 # ── Install Node.js 20 (glibc-217 unofficial build) ─────────────────────────
