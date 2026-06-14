@@ -172,9 +172,9 @@ jobs:
           WRAPPER
           chmod +x staging/octg/bin/opencode-telegram-bot
 
-          # Ensure all scripts are executable
           chmod +x staging/octg/bin/opencode \
-                   staging/octg/bin/opencode.bin
+                   staging/octg/bin/opencode.bin \
+                   staging/octg/node/bin/node
 
           # Create tarball
           tar czf octg-legacy-glibc.tar.gz -C staging octg/
