@@ -772,6 +772,18 @@ upgrade_legacy() {
     echo "Upgrade complete! (${current_version:-unknown} -> $latest_ver)"
     echo "Backup: $backup"
     rm -f "$tmp"
+
+    # Clean old backups (keep only the latest)
+    local parent
+    parent=$(dirname "$dir")
+    local base
+    base=$(basename "$dir")
+    local old_backups
+    old_backups=$(ls -dt "${parent}/${base}.bak."* 2>/dev/null | tail -n +2)
+    if [ -n "$old_backups" ]; then
+        echo "Cleaning old backups..."
+        echo "$old_backups" | xargs rm -rf
+    fi
 }
 
 upgrade_modern() {
