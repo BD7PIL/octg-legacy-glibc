@@ -31,7 +31,7 @@ The result: opencode runs via musl isolation while the bot uses the system's gli
 ```bash
 # Download the latest release tarball from GitHub Releases
 # (check the Releases page for the exact URL)
-curl -LO https://github.com/pedropombeiro/octg-legacy-glibc/releases/latest/download/octg-legacy-glibc.tar.gz
+curl -LO https://github.com/BD7PIL/octg-legacy-glibc/releases/latest/download/octg-legacy-glibc.tar.gz
 
 # Extract
 tar xzf octg-legacy-glibc.tar.gz

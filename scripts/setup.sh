@@ -345,12 +345,25 @@ DONE
 # Main
 # =============================================================================
 main() {
+    local is_upgrade=false
+    [ -f "$CONFIG_FILE" ] && is_upgrade=true
+
     print_banner
     check_prerequisites
-    handle_upgrade
-    prompt_config
-    setup_shell
-    setup_autorestore
+
+    if $is_upgrade; then
+        warn "Existing configuration found at $CONFIG_FILE"
+        info "Preserving existing configuration."
+        echo ""
+        handle_upgrade
+        setup_shell
+        setup_autorestore
+    else
+        prompt_config
+        setup_shell
+        setup_autorestore
+    fi
+
     print_done
 }
 
