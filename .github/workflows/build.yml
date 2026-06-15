@@ -176,6 +176,9 @@ jobs:
                    staging/octg/bin/opencode.bin \
                    staging/octg/node/bin/node
 
+          # Version tracking for octg upgrade
+          echo "${{ needs.detect.outputs.tag }}" > staging/octg/VERSION
+
           # Create tarball
           tar czf octg-legacy-glibc.tar.gz -C staging octg/
 

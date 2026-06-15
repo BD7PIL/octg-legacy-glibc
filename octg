@@ -666,6 +666,129 @@ cmd_restore() {
     return 0
 }
 
+# ---------------------------------------------------------------------------
+# Upgrade
+# ---------------------------------------------------------------------------
+
+detect_install_type() {
+    local script_dir
+    script_dir="$(cd "$(dirname "$0")" && pwd)"
+    if [ -f "$script_dir/node/bin/node" ]; then
+        echo "legacy"
+    else
+        echo "modern"
+    fi
+}
+
+cmd_upgrade() {
+    local script_dir
+    script_dir="$(cd "$(dirname "$0")" && pwd)"
+    local install_type
+    install_type=$(detect_install_type)
+
+    echo "Installation type: $install_type"
+
+    case "$install_type" in
+        legacy) upgrade_legacy "$script_dir" ;;
+        modern) upgrade_modern "$script_dir" ;;
+        *) echo "ERROR: Unknown installation type"; return 1 ;;
+    esac
+}
+
+upgrade_legacy() {
+    local dir="$1"
+    local version_file="$dir/VERSION"
+    local current_version=""
+
+    [ -f "$version_file" ] && current_version=$(cat "$version_file")
+    echo "Current version: ${current_version:-unknown}"
+
+    # Check GitHub for latest release
+    local latest_json=""
+    if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
+        latest_json=$(gh api repos/BD7PIL/octg-legacy-glibc/releases/latest 2>/dev/null)
+    else
+        local auth=""
+        [ -n "${GH_TOKEN:-}" ] && auth="-H Authorization:token $GH_TOKEN"
+        latest_json=$(curl -sf $auth "https://api.github.com/repos/BD7PIL/octg-legacy-glibc/releases/latest" 2>/dev/null)
+    fi
+
+    if [ -z "$latest_json" ]; then
+        echo "ERROR: Failed to check for updates"
+        return 1
+    fi
+
+    local latest_ver dl_url
+    latest_ver=$(echo "$latest_json" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null)
+    dl_url=$(echo "$latest_json" | python3 -c "import sys,json; a=json.load(sys.stdin).get('assets',[]); print(a[0]['browser_download_url'] if a else '')" 2>/dev/null)
+
+    if [ -z "$latest_ver" ] || [ -z "$dl_url" ]; then
+        echo "ERROR: Failed to parse release info"
+        return 1
+    fi
+
+    echo "Latest version: $latest_ver"
+
+    if [ "$current_version" = "$latest_ver" ]; then
+        echo "Already up to date!"
+        return 0
+    fi
+
+    read -rp "Upgrade to $latest_ver? (Y/n): " yn
+    case "${yn,,}" in
+        n|no) echo "Cancelled."; return 0 ;;
+    esac
+
+    echo "Stopping running instances..."
+    cmd_stop_all 2>/dev/null || true
+
+    local backup="${dir}.bak.$(date +%Y%m%d%H%M%S)"
+    echo "Backing up to $backup..."
+    cp -a "$dir" "$backup"
+
+    echo "Downloading $latest_ver..."
+    local tmp="/tmp/octg-legacy-${latest_ver}.tar.gz"
+    if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
+        gh release download "$latest_ver" -R BD7PIL/octg-legacy-glibc \
+            -f "octg-legacy-glibc.tar.gz" -o "$tmp" 2>/dev/null
+    else
+        local auth=""
+        [ -n "${GH_TOKEN:-}" ] && auth="-H Authorization:token $GH_TOKEN"
+        curl -fSL $auth "$dl_url" -o "$tmp" 2>/dev/null
+    fi
+
+    if [ ! -f "$tmp" ]; then
+        echo "ERROR: Download failed"
+        return 1
+    fi
+
+    echo "Extracting..."
+    tar xzf "$tmp" -C "$dir" --strip-components=1
+    echo "$latest_ver" > "$dir/VERSION"
+
+    echo "Restoring instances..."
+    cmd_restore
+
+    echo "Upgrade complete! (${current_version:-unknown} -> $latest_ver)"
+    echo "Backup: $backup"
+    rm -f "$tmp"
+}
+
+upgrade_modern() {
+    echo "Current opencode version:"
+    "$HOME/.opencode/bin/opencode" version 2>/dev/null || echo "  unknown"
+    echo ""
+    echo "Updating opencode..."
+    curl -fsSL https://opencode.ai/install | bash || echo "WARNING: opencode update failed"
+
+    echo ""
+    echo "Updating opencode-telegram-bot..."
+    npm update -g @grinev/opencode-telegram-bot 2>/dev/null || echo "WARNING: bot update failed"
+
+    echo ""
+    echo "Upgrade complete!"
+}
+
 cmd_help() {
     cat << 'HELP'
 octg — OpenCode Telegram Group Instance Manager
@@ -677,6 +800,7 @@ Commands:
   octg list                       List all instances
   octg status [port]              Show details
   octg restore                    Restore previously running instances
+  octg upgrade                    Upgrade to latest version (legacy: download; modern: npm)
 
 Usage in Telegram (use ! prefix to run shell commands):
   !octg start /code/api           Start a web-mode instance
@@ -693,5 +817,6 @@ case "${1:-}" in
     status)  shift; cmd_status "${1:-}" ;;
     help|--help|-h) cmd_help ;;
     restore)  cmd_restore ;;
+    upgrade)  cmd_upgrade ;;
     *) echo "ERROR: Unknown command: ${1:-<none>}"; echo ""; cmd_help; exit 1 ;;
 esac
