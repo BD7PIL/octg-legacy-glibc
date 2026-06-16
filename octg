@@ -80,7 +80,7 @@ if [ ${#BOT_TOKENS[@]} -eq 0 ]; then
     exit 1
 fi
 
-for var in OCTG_ALLOWED_USER_ID OCTG_OPENCODE_BIN; do
+for var in OCTG_ALLOWED_USER_ID OCTG_OPENCODE_BIN OCTG_MODEL_PROVIDER OCTG_MODEL_ID; do
     if [ -z "${!var:-}" ]; then
         echo "ERROR: Missing required variable: $var"
         echo "  Configure it in: $OCTG_CONFIG_FILE"
@@ -260,14 +260,14 @@ print(cp.get('worktree','') if cp else '')" 2>/dev/null || true)
         fi
     fi
 
-    # Build bot .env — optional vars only written if set
+    # Build bot .env
     {
         echo "TELEGRAM_BOT_TOKEN=${token}"
         echo "TELEGRAM_ALLOWED_USER_ID=${OCTG_ALLOWED_USER_ID}"
         echo "OPENCODE_API_URL=http://localhost:${port}"
         echo "OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-}"
-        [ -n "${OCTG_MODEL_PROVIDER:-}" ] && echo "OPENCODE_MODEL_PROVIDER=${OCTG_MODEL_PROVIDER}"
-        [ -n "${OCTG_MODEL_ID:-}" ] && echo "OPENCODE_MODEL_ID=${OCTG_MODEL_ID}"
+        echo "OPENCODE_MODEL_PROVIDER=${OCTG_MODEL_PROVIDER:?OPENCODE_MODEL_PROVIDER required in config.env}"
+        echo "OPENCODE_MODEL_ID=${OCTG_MODEL_ID:?OPENCODE_MODEL_ID required in config.env}"
         [ -n "${OCTG_BOT_LOCALE:-}" ] && echo "BOT_LOCALE=${OCTG_BOT_LOCALE}"
         echo "OCTG_CALLER_PORT=${port}"
     } > "$bot_cf/.env"
