@@ -787,9 +787,6 @@ upgrade_legacy() {
 }
 
 upgrade_modern() {
-    echo "Current opencode version:"
-    "$HOME/.opencode/bin/opencode" version 2>/dev/null || echo "  unknown"
-    echo ""
     echo "Updating opencode..."
     curl -fsSL https://opencode.ai/install | bash || echo "WARNING: opencode update failed"
 
@@ -798,6 +795,28 @@ upgrade_modern() {
     npm update -g @grinev/opencode-telegram-bot 2>/dev/null || echo "WARNING: bot update failed"
 
     echo ""
+    echo "Upgrading octg scripts..."
+
+    # Try: 1) git pull (if cloned), 2) release download (if installed via zip)
+    local dir
+    dir="$(cd "$(dirname "$0")" && pwd)"
+    if [ -d "$dir/.git" ]; then
+        git -C "$dir" pull --ff-only 2>/dev/null && echo "  Updated via git" && return 0
+    fi
+
+    local dl_url token_hdr tmp
+    tmp=$(mktemp -d)
+    token_hdr=""
+    [ -n "${GH_TOKEN:-}" ] && token_hdr="-H Authorization: token $GH_TOKEN"
+    dl_url=$(curl -sf $token_hdr "https://api.github.com/repos/BD7PIL/octg/releases/latest" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('tarball_url',''))" 2>/dev/null)
+    [ -z "$dl_url" ] && { echo "  (skip: could not reach GitHub)"; return 0; }
+
+    curl -sfL $token_hdr "$dl_url" -o "$tmp/octg.tar.gz" 2>/dev/null || { echo "  (skip: download failed)"; return 0; }
+    tar xzf "$tmp/octg.tar.gz" -C "$tmp" --strip-components=1 2>/dev/null
+    cp -af "$tmp"/. "$dir/"
+    chmod +x "$dir"/octg "$dir"/install.sh "$dir"/bin/opencode 2>/dev/null || true
+    rm -rf "$tmp"
+    echo "  Updated via release."
     echo "Upgrade complete!"
 }
 
