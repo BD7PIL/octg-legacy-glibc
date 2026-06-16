@@ -73,6 +73,7 @@ octg restart <port>             # Restart an instance
 octg list                       # List all instances
 octg status [port]              # Show instance details
 octg restore                    # Restore previously running instances
+octg upgrade                    # Upgrade to latest version
 ```
 
 ## Telegram Usage
@@ -91,9 +92,19 @@ If you enabled auto-restore during setup, a `@reboot` crontab entry runs `octg r
 
 ## Upgrading
 
+Use the built-in upgrade command:
+
+```bash
+octg upgrade
+```
+
+This downloads the latest release, backs up the current installation, extracts the new version, and restores running instances. Configuration in `~/.config/octg/config.env` is preserved.
+
+Alternatively, manually:
+
 1. Download the new release tarball
 2. Extract over the existing directory (or to a new location)
-3. Re-run `./setup.sh` — it will detect the upgrade, preserve or overwrite config as needed, and offer to stop running instances
+3. Re-run `./setup.sh` if new config options were added
 
 ## Provider Setup
 
