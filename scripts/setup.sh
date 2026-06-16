@@ -20,8 +20,21 @@ set -euo pipefail
 # Constants
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_DIR="$HOME/.octg"
 CONFIG_DIR="$HOME/.config/octg"
 CONFIG_FILE="$CONFIG_DIR/config.env"
+
+if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
+    DOWNLOAD_DIR="$SCRIPT_DIR"
+    echo "Installing octg-legacy-glibc to $INSTALL_DIR ..."
+    rm -rf "$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
+    cp -a "$SCRIPT_DIR/." "$INSTALL_DIR/"
+    chmod +x "$INSTALL_DIR"/octg "$INSTALL_DIR"/setup.sh "$INSTALL_DIR"/bin/* 2>/dev/null || true
+    SCRIPT_DIR="$INSTALL_DIR"
+    cd "$SCRIPT_DIR"
+    echo "Done. You may now delete the download at: $DOWNLOAD_DIR"
+fi
 
 # ---------------------------------------------------------------------------
 # ASCII banner

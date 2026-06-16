@@ -33,19 +33,18 @@ The result: opencode runs via musl isolation while the bot uses the system's gli
 # (check the Releases page for the exact URL)
 curl -LO https://github.com/BD7PIL/octg-legacy-glibc/releases/latest/download/octg-legacy-glibc.tar.gz
 
-# Extract
+# Extract and install
 tar xzf octg-legacy-glibc.tar.gz
 cd octg
-
-# Run interactive setup
 ./setup.sh
 ```
 
 The setup script will:
 
-1. Prompt for your Telegram bot token(s), user ID, and server password
-2. Write configuration to `~/.config/octg/config.env` (chmod 600)
-3. Add the bundled binaries to your `PATH`
+1. Copy octg to `~/.octg/` (you can delete the download afterwards)
+2. Prompt for your Telegram bot token(s), user ID, and server password
+3. Write configuration to `~/.config/octg/config.env` (chmod 600)
+4. Add the bundled binaries to your `PATH`
 4. Configure SSH-friendly shell setup (`.bash_profile` → `.bashrc`)
 5. Optionally set up `@reboot` crontab for auto-restore
 
