@@ -213,4 +213,38 @@ jobs:
           tag_name: ${{ needs.detect.outputs.tag }}
           name: ${{ needs.detect.outputs.tag }}
           files: octg-legacy-glibc.tar.gz
-          generate_release_notes: true
+          body: |
+            opencode v${{ needs.detect.outputs.opencode_version }} + opencode-telegram-bot v${{ needs.detect.outputs.bot_version }} bundled with musl libraries for systems with older GLIBC versions (RHEL 7, CentOS 7, Scientific Linux 7).
+
+            ## Installation
+
+            1. Download and extract:
+               ```bash
+               tar xzf octg-legacy-glibc.tar.gz
+               cd octg
+               ```
+
+            2. Run setup:
+               ```bash
+               ./setup.sh
+               ```
+
+            3. Start an instance:
+               ```bash
+               octg start ~/my-project
+               ```
+
+            ## Contents
+
+            | Component | Version | Notes |
+            |---|---|---|
+            | opencode | v${{ needs.detect.outputs.opencode_version }} | musl-linked, runs on glibc 2.17+ |
+            | opencode-telegram-bot | v${{ needs.detect.outputs.bot_version }} | compiled on CentOS 7 (devtoolset-11) |
+            | Node.js | 20.x | glibc-2.17 unofficial build |
+            | octg | — | instance manager script |
+
+            ## Upstream
+
+            - opencode: https://github.com/anomalyco/opencode/releases/tag/v${{ needs.detect.outputs.opencode_version }}
+            - opencode-telegram-bot: https://github.com/grinev/opencode-telegram-bot
+            - musl isolation: https://github.com/pedropombeiro/opencode-legacy-glibc
