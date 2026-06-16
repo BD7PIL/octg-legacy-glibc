@@ -89,13 +89,21 @@ prompt_config() {
     local server_pw=""
     read -rp "  Enter opencode server password (or Enter for none): " server_pw
 
-    # -- Model provider (optional) --
+    # -- Model provider (required by bot) --
     local model_provider=""
-    read -rp "  Enter model provider (or Enter to skip): " model_provider
+    while true; do
+        read -rp "  Enter model provider (e.g. zai-coding-plan): " model_provider
+        [ -n "$model_provider" ] && break
+        error "Model provider is required by opencode-telegram-bot."
+    done
 
-    # -- Model ID (optional) --
+    # -- Model ID (required by bot) --
     local model_id=""
-    read -rp "  Enter model ID (or Enter to skip): " model_id
+    while true; do
+        read -rp "  Enter model ID (e.g. glm-5.1): " model_id
+        [ -n "$model_id" ] && break
+        error "Model ID is required by opencode-telegram-bot."
+    done
 
     # -- Bot locale (optional) --
     local bot_locale=""
@@ -121,6 +129,8 @@ prompt_config() {
         done
         echo "OCTG_ALLOWED_USER_ID=${user_id}"
         echo "OPENCODE_SERVER_PASSWORD=${server_pw}"
+        echo "OCTG_MODEL_PROVIDER=${model_provider}"
+        echo "OCTG_MODEL_ID=${model_id}"
         if [ "${#tokens[@]}" -gt 2 ]; then
             local _ports=""
             for i in "${!tokens[@]}"; do
@@ -133,25 +143,10 @@ prompt_config() {
         echo "# PATH for bundled binaries"
         echo "export PATH=\"${SCRIPT_DIR}/bin:${SCRIPT_DIR}/node/bin:\$PATH\""
         echo ""
-        echo "# Optional (uncomment to use):"
-        if [ -n "$model_provider" ]; then
-            echo "OCTG_MODEL_PROVIDER=${model_provider}"
-        else
-            echo "#OCTG_MODEL_PROVIDER="
-        fi
-        if [ -n "$model_id" ]; then
-            echo "OCTG_MODEL_ID=${model_id}"
-        else
-            echo "#OCTG_MODEL_ID="
-        fi
-        if [ -n "$bot_locale" ]; then
-            echo "OCTG_BOT_LOCALE=${bot_locale}"
-        else
-            echo "#OCTG_BOT_LOCALE="
-        fi
+        echo "# Optional:"
+        [ -n "$bot_locale" ] && echo "OCTG_BOT_LOCALE=${bot_locale}" || echo "#OCTG_BOT_LOCALE="
         if [ -n "$dt_version" ]; then
             echo ""
-            echo "# Auto-detected devtoolset for native module compilation"
             echo "OCTG_DEVTOOLSET=${dt_version}"
         fi
     } > "$CONFIG_FILE"

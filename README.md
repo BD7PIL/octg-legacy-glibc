@@ -58,8 +58,8 @@ Configuration lives in `~/.config/octg/config.env`:
 | `OCTG_BOT_TOKEN_1` | Yes | Telegram bot token (add `_2`, `_3`, ... for multiple bots) |
 | `OCTG_ALLOWED_USER_ID` | Yes | Your Telegram user ID |
 | `OPENCODE_SERVER_PASSWORD` | Recommended | Server password (protects the API) |
-| `OCTG_MODEL_PROVIDER` | No | Override default model provider |
-| `OCTG_MODEL_ID` | No | Override default model ID |
+| `OCTG_MODEL_PROVIDER` | Yes | Model provider (required by bot) |
+| `OCTG_MODEL_ID` | Yes | Model ID (required by bot) |
 | `OCTG_BOT_LOCALE` | No | Bot language (e.g. `en`, `zh`) |
 | `OCTG_PORTS` | No | Available ports (default: `4096 4097`) |
 | `OCTG_DEVTOOLSET` | No | devtoolset version for native modules (auto-detected) |
