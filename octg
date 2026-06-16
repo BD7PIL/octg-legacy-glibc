@@ -178,9 +178,9 @@ force_cleanup_port() {
         kill_pg "$p" 5 2>/dev/null && killed=$((killed+1)) || true
     done
 
-    # 3. Kill opencode-telegram-bot associated with this port
+    # 3. Kill opencode-telegram associated with this port
     local bpid
-    for bpid in $(pgrep -f "opencode-telegram-bot" 2>/dev/null); do
+    for bpid in $(pgrep -f "opencode-telegram" 2>/dev/null); do
         if tr '\0' '\n' < /proc/$bpid/environ 2>/dev/null \
                 | grep -q "OCTG_CALLER_PORT=${port}\|OPENCODE_API_URL=http://localhost:${port}"; then
             kill_pg "$bpid" 5 2>/dev/null && killed=$((killed+1)) || true
@@ -348,7 +348,7 @@ while true; do
         echo "[octg:$_PORT] Reusing existing bot (PID=$_BOT_PID)"
     else
         export OPENCODE_TELEGRAM_HOME="$_BOT_CF"
-        opencode-telegram-bot start &
+        opencode-telegram start &
         _BOT_PID=$!
     fi
 

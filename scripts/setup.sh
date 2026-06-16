@@ -326,7 +326,7 @@ print_done() {
   Bundled components:
     opencode:    ${SCRIPT_DIR}/bin/opencode
     Node.js:     ${SCRIPT_DIR}/node/bin/node
-    Bot:         ${SCRIPT_DIR}/bin/opencode-telegram-bot
+    Bot:         ${SCRIPT_DIR}/bin/opencode-telegram
     Manager:     ${SCRIPT_DIR}/octg
 
   Next steps:

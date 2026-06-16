@@ -163,14 +163,14 @@ jobs:
           cp    staging/bot/package.json staging/octg/bot/
           cp -r staging/bot/node_modules staging/octg/bot/
 
-          # Create bin/opencode-telegram-bot wrapper
+          # Create bin/opencode-telegram wrapper
           mkdir -p staging/octg/bin
-          cat > staging/octg/bin/opencode-telegram-bot << 'WRAPPER'
+          cat > staging/octg/bin/opencode-telegram << 'WRAPPER'
           #!/bin/sh
           SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
           exec "${SCRIPT_DIR}/node/bin/node" "${SCRIPT_DIR}/bot/dist/cli.js" "$@"
           WRAPPER
-          chmod +x staging/octg/bin/opencode-telegram-bot
+          chmod +x staging/octg/bin/opencode-telegram
 
           chmod +x staging/octg/bin/opencode \
                    staging/octg/bin/opencode.bin \

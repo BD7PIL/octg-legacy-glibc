@@ -16,6 +16,6 @@ COPY staging/octg/ /opt/octg/
 COPY build/test/test-env.sh /opt/test-env.sh
 RUN chmod +x /opt/test-env.sh /opt/octg/setup.sh /opt/octg/octg \
              /opt/octg/bin/opencode /opt/octg/bin/opencode.bin \
-             /opt/octg/bin/opencode-telegram-bot
+             /opt/octg/bin/opencode-telegram
 
 CMD ["/opt/test-env.sh"]
