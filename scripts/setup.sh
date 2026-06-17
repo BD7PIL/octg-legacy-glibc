@@ -154,7 +154,7 @@ prompt_config() {
         fi
         echo ""
         echo "# PATH for bundled binaries"
-        echo "export PATH=\"${SCRIPT_DIR}/bin:${SCRIPT_DIR}/node/bin:\$PATH\""
+        echo "export PATH=\"${SCRIPT_DIR}:${SCRIPT_DIR}/bin:${SCRIPT_DIR}/node/bin:\$PATH\""
         echo ""
         echo "# Optional:"
         [ -n "$bot_locale" ] && echo "OCTG_BOT_LOCALE=${bot_locale}" || echo "#OCTG_BOT_LOCALE="
