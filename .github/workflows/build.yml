@@ -180,13 +180,13 @@ jobs:
           echo "${{ needs.detect.outputs.tag }}" > staging/octg/VERSION
 
           # Create tarball
-          tar czf octg-legacy-glibc.tar.gz -C staging octg/
+          tar czf "octg-legacy-glibc-${{ needs.detect.outputs.tag }}.tar.gz" -C staging octg/
 
       - name: Upload tarball
         uses: actions/upload-artifact@v4
         with:
           name: tarball
-          path: octg-legacy-glibc.tar.gz
+          path: octg-legacy-glibc-${{ needs.detect.outputs.tag }}.tar.gz
 
       - name: Test in CentOS 7
         run: |
@@ -212,7 +212,7 @@ jobs:
         with:
           tag_name: ${{ needs.detect.outputs.tag }}
           name: ${{ needs.detect.outputs.tag }}
-          files: octg-legacy-glibc.tar.gz
+          files: octg-legacy-glibc-${{ needs.detect.outputs.tag }}.tar.gz
           body: |
             opencode v${{ needs.detect.outputs.opencode_version }} + opencode-telegram-bot v${{ needs.detect.outputs.bot_version }} bundled with musl libraries for systems with older GLIBC versions (RHEL 7, CentOS 7, Scientific Linux 7).
 
