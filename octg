@@ -810,7 +810,8 @@ upgrade_modern() {
     dl_url=$(curl -sf $token_hdr "https://api.github.com/repos/BD7PIL/octg/releases/latest" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('tarball_url',''))" 2>/dev/null)
     [ -z "$dl_url" ] && { echo "  (skip: could not reach GitHub)"; return 0; }
 
-    curl -sfL $token_hdr "$dl_url" -o "$tmp/octg.tar.gz" 2>/dev/null || { echo "  (skip: download failed)"; return 0; }
+    echo "  Downloading..."
+    curl -fSL $token_hdr "$dl_url" -o "$tmp/octg.tar.gz" || { echo "  (skip: download failed)"; return 0; }
     tar xzf "$tmp/octg.tar.gz" -C "$tmp" --strip-components=1 2>/dev/null
     cp -af "$tmp"/. "$dir/"
     chmod +x "$dir"/octg "$dir"/install.sh "$dir"/bin/opencode 2>/dev/null || true
