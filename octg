@@ -749,12 +749,11 @@ upgrade_legacy() {
     echo "Downloading $latest_ver..."
     local tmp="/tmp/octg-legacy-${latest_ver}.tar.gz"
     if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
-        gh release download "$latest_ver" -R BD7PIL/octg-legacy-glibc \
-            -f "octg-legacy-glibc.tar.gz" -o "$tmp" 2>/dev/null
+        gh release download "$latest_ver" -R BD7PIL/octg-legacy-glibc -D "$(dirname "$tmp")" --clobber
     else
         local auth=""
         [ -n "${GH_TOKEN:-}" ] && auth="-H Authorization:token $GH_TOKEN"
-        curl -fSL $auth "$dl_url" -o "$tmp" 2>/dev/null
+        curl -fSL $auth "$dl_url" -o "$tmp"
     fi
 
     if [ ! -f "$tmp" ]; then
