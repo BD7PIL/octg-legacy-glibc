@@ -85,6 +85,25 @@ else
     fail "octg script not found or not executable"
 fi
 
+# ── Test 8: opencode TUI smoke test ──────────────────────────────────────────
+# Verify the embedded libopentui.so can actually load on glibc 2.17.
+# We allocate a pseudo-TTY via `script` (part of util-linux, pre-installed on
+# CentOS 7) and start opencode for 2 seconds. If the musl-linked opentui .so
+# fails to load, error messages appear in the output. If the test infrastructure
+# doesn't have `script`, we skip gracefully.
+echo "=== Test 8: opencode TUI smoke test (embedded opentui musl load) ==="
+if command -v script >/dev/null 2>&1; then
+    TUI_OUTPUT=$(timeout 2 script -qc "bin/opencode" /dev/null 2>&1 || true)
+    if echo "$TUI_OUTPUT" | grep -qiE 'cannot open shared object|GLIBC.*not found|dlopen.*fail|Error.*load.*opentui'; then
+        fail "TUI load error: $(echo "$TUI_OUTPUT" | grep -iE 'cannot open|GLIBC|dlopen|Error.*opentui' | head -3)"
+    else
+        pass
+    fi
+else
+    echo "  (script command unavailable, skipping PTY test)"
+    pass
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "========================================="
