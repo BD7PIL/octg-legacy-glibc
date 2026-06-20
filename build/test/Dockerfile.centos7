@@ -34,4 +34,12 @@ RUN mkdir -p /tmp/.octg-ld \
     && mkdir -p /tmp/etc \
     && printf '/opt/octg/lib' > /tmp/etc/ld-musl-x86_64.path
 
+# Debug: verify everything is executable before running tests
+RUN echo "=== pre-test diagnostics ===" \
+    && ls -la /opt/octg/lib/opencode /opt/octg/lib/ld-musl-x86_64.so.1 \
+    && readelf -p .interp /opt/octg/lib/opencode 2>/dev/null \
+    && ls -la /tmp/.octg-ld/ \
+    && echo "--- direct exec ---" \
+    && /opt/octg/lib/opencode --version 2>&1 || echo "direct exec failed: $?"
+
 CMD ["/opt/test-env.sh"]
