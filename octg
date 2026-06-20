@@ -766,11 +766,11 @@ upgrade_legacy() {
     echo "$latest_ver" > "$dir/VERSION"
 
     # Ensure executables have +x (tarball may lose it through CI artifact pipeline)
-    chmod +x "$dir"/octg "$dir"/setup.sh "$dir"/bin/* "$dir"/lib/opencode 2>/dev/null || true
+    chmod +x "$dir"/octg "$dir"/setup.sh "$dir"/bin/* "$dir"/lib/opencode "$dir"/lib/ld-musl-x86_64.so.1 2>/dev/null || true
 
     # Verify critical binaries got +x before proceeding
     local missing_x=()
-    for f in "$dir"/bin/opencode "$dir"/bin/opencode.bin "$dir"/lib/opencode "$dir"/node/bin/node; do
+    for f in "$dir"/bin/opencode "$dir"/bin/opencode.bin "$dir"/lib/opencode "$dir"/lib/ld-musl-x86_64.so.1 "$dir"/node/bin/node; do
         [ -x "$f" ] || missing_x+=("$f")
     done
     if [ ${#missing_x[@]} -gt 0 ]; then

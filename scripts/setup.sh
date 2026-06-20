@@ -36,11 +36,11 @@ if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
     cp -a "$SCRIPT_DIR/." "$INSTALL_DIR/"
 
     echo "  [INFO]  Setting executable permissions ..."
-    chmod +x "$INSTALL_DIR"/octg "$INSTALL_DIR"/setup.sh "$INSTALL_DIR"/bin/* "$INSTALL_DIR"/lib/opencode 2>/dev/null || true
+    chmod +x "$INSTALL_DIR"/octg "$INSTALL_DIR"/setup.sh "$INSTALL_DIR"/bin/* "$INSTALL_DIR"/lib/opencode "$INSTALL_DIR"/lib/ld-musl-x86_64.so.1 2>/dev/null || true
 
     # Verify critical binaries got +x
     missing_x=()
-    for f in "$INSTALL_DIR"/bin/opencode "$INSTALL_DIR"/bin/opencode.bin "$INSTALL_DIR"/lib/opencode "$INSTALL_DIR"/node/bin/node; do
+    for f in "$INSTALL_DIR"/bin/opencode "$INSTALL_DIR"/bin/opencode.bin "$INSTALL_DIR"/lib/opencode "$INSTALL_DIR"/lib/ld-musl-x86_64.so.1 "$INSTALL_DIR"/node/bin/node; do
         [ -x "$f" ] || missing_x+=("$f")
     done
     if [ ${#missing_x[@]} -gt 0 ]; then
@@ -51,7 +51,7 @@ if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
         echo "  [ERROR] Run manually:  chmod +x ${missing_x[*]}"
         exit 1
     fi
-    echo "  [INFO]  Executables verified: octg, bin/opencode, bin/opencode.bin, lib/opencode, node/bin/node"
+    echo "  [INFO]  Executables verified: octg, bin/opencode, bin/opencode.bin, lib/opencode, lib/ld-musl-x86_64.so.1, node/bin/node"
 
     SCRIPT_DIR="$INSTALL_DIR"
     cd "$SCRIPT_DIR"

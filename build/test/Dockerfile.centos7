@@ -15,31 +15,23 @@ COPY staging/octg/ /opt/octg/
 # ── Copy test script ─────────────────────────────────────────────────────────
 COPY build/test/test-env.sh /opt/test-env.sh
 
-# Ensure all binaries are executable. CI artifact pipeline (docker build →
-# upload-artifact → download-artifact → tar) can drop the execute bit on
-# lib/opencode. chmod here so the test validates functionality, not CI plumbing.
+# Ensure all binaries + runtime libs are executable.
+# CI artifact pipeline can drop the execute bit on lib/opencode and on the
+# musl runtime (ld-musl-x86_64.so.1). The kernel requires +x on the ELF
+# interpreter — without it, execve returns EACCES ("Permission denied").
 RUN chmod +x /opt/test-env.sh /opt/octg/setup.sh /opt/octg/octg \
              /opt/octg/bin/opencode /opt/octg/bin/opencode.bin \
              /opt/octg/bin/opencode-telegram \
              /opt/octg/lib/opencode \
+             /opt/octg/lib/ld-musl-x86_64.so.1 \
              /opt/octg/node/bin/node
 
-# ── Simulate first-run setup: create musl loader symlink + .path file ────────
-# The bin/opencode wrapper creates these at runtime, but the CentOS 7 kernel
-# (3.10) can report "Permission denied" (EACCES) instead of "No such file"
-# when the ELF interpreter symlink is missing. Pre-create them here so the
-# test validates the binary itself, not the wrapper's symlink logic.
+# ── Pre-create musl loader symlink + .path file ──────────────────────────────
+# The bin/opencode wrapper creates these at runtime, but pre-creating them
+# isolates the test from wrapper logic — we're validating the binary works.
 RUN mkdir -p /tmp/.octg-ld \
     && ln -sf /opt/octg/lib/ld-musl-x86_64.so.1 /tmp/.octg-ld/ld-musl-x86_64.so.1 \
     && mkdir -p /tmp/etc \
     && printf '/opt/octg/lib' > /tmp/etc/ld-musl-x86_64.path
-
-# Debug: verify everything is executable before running tests
-RUN echo "=== pre-test diagnostics ===" \
-    && ls -la /opt/octg/lib/opencode /opt/octg/lib/ld-musl-x86_64.so.1 \
-    && readelf -p .interp /opt/octg/lib/opencode 2>/dev/null \
-    && ls -la /tmp/.octg-ld/ \
-    && echo "--- direct exec ---" \
-    && /opt/octg/lib/opencode --version 2>&1 || echo "direct exec failed: $?"
 
 CMD ["/opt/test-env.sh"]
