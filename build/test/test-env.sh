@@ -17,7 +17,15 @@ echo "=== Test 1: opencode wrapper chain ==="
 # Capture output to detect Permission denied or similar errors.
 # Do NOT grep for "opencode" in the output — the error message itself contains
 # the word "opencode", which would cause a false positive.
+echo "  Debug: ls -la lib/opencode bin/opencode bin/opencode.bin:"
+ls -la lib/opencode bin/opencode bin/opencode.bin 2>&1 | sed 's/^/    /'
+echo "  Debug: readelf .interp:"
+readelf -p .interp lib/opencode 2>&1 | sed 's/^/    /'
+echo "  Debug: checking /tmp/.octg-ld symlink:"
+ls -la /tmp/.octg-ld/ 2>&1 | sed 's/^/    /' || echo "    (not created)"
+echo "  Debug: running bin/opencode --version:"
 VERSION_OUTPUT=$(bin/opencode --version 2>&1 || true)
+echo "  Output: $VERSION_OUTPUT" | head -5 | sed 's/^/    /'
 if echo "$VERSION_OUTPUT" | grep -qiE 'permission denied|cannot execute|no such file'; then
     fail "opencode wrapper error: $(echo "$VERSION_OUTPUT" | head -3)"
 elif bin/opencode --version >/dev/null 2>&1; then

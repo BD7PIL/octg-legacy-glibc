@@ -24,4 +24,7 @@ RUN chmod +x /opt/test-env.sh /opt/octg/setup.sh /opt/octg/octg \
              /opt/octg/lib/opencode \
              /opt/octg/node/bin/node
 
+# Debug: verify permissions after chmod
+RUN ls -la /opt/octg/lib/opencode /opt/octg/bin/opencode /opt/octg/bin/opencode.bin /opt/octg/node/bin/node
+
 CMD ["/opt/test-env.sh"]
