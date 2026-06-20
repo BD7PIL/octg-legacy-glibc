@@ -177,11 +177,19 @@ jobs:
                    staging/octg/lib/opencode \
                    staging/octg/node/bin/node
 
+          # Debug: verify permissions before tarring
+          echo "Permissions before tar:"
+          ls -la staging/octg/bin/opencode staging/octg/bin/opencode.bin staging/octg/lib/opencode staging/octg/node/bin/node
+
           # Version tracking for octg upgrade
           echo "${{ needs.detect.outputs.tag }}" > staging/octg/VERSION
 
           # Create tarball
           tar czf "octg-legacy-glibc-${{ needs.detect.outputs.tag }}.tar.gz" -C staging octg/
+
+          # Debug: verify permissions inside tarball
+          echo "Permissions in tarball:"
+          tar tzvf "octg-legacy-glibc-${{ needs.detect.outputs.tag }}.tar.gz" | grep -E 'lib/opencode$|bin/opencode$'
 
       - name: Upload tarball
         uses: actions/upload-artifact@v4
