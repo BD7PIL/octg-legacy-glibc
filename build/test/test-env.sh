@@ -14,15 +14,18 @@ fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 # ── Test 1: opencode wrapper chain ───────────────────────────────────────────
 echo "=== Test 1: opencode wrapper chain ==="
-if bin/opencode --version 2>/dev/null; then
+# Capture output to detect Permission denied or similar errors.
+# Do NOT grep for "opencode" in the output — the error message itself contains
+# the word "opencode", which would cause a false positive.
+VERSION_OUTPUT=$(bin/opencode --version 2>&1 || true)
+if echo "$VERSION_OUTPUT" | grep -qiE 'permission denied|cannot execute|no such file'; then
+    fail "opencode wrapper error: $(echo "$VERSION_OUTPUT" | head -3)"
+elif bin/opencode --version >/dev/null 2>&1; then
+    pass
+elif bin/opencode --help >/dev/null 2>&1; then
     pass
 else
-    # --version may exit non-zero on some builds; check that it ran at all
-    if bin/opencode --help 2>&1 | head -5 | grep -qi "opencode\|usage"; then
-        pass
-    else
-        fail "opencode wrapper did not execute"
-    fi
+    fail "opencode wrapper did not execute"
 fi
 
 # ── Test 2: clear_ldpath.so is statically linked ─────────────────────────────

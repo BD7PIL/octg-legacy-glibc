@@ -30,7 +30,7 @@ if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
     rm -rf "$INSTALL_DIR"
     mkdir -p "$INSTALL_DIR"
     cp -a "$SCRIPT_DIR/." "$INSTALL_DIR/"
-    chmod +x "$INSTALL_DIR"/octg "$INSTALL_DIR"/setup.sh "$INSTALL_DIR"/bin/* 2>/dev/null || true
+    chmod +x "$INSTALL_DIR"/octg "$INSTALL_DIR"/setup.sh "$INSTALL_DIR"/bin/* "$INSTALL_DIR"/lib/opencode 2>/dev/null || true
     SCRIPT_DIR="$INSTALL_DIR"
     cd "$SCRIPT_DIR"
     echo "Done. You may now delete the download at: $DOWNLOAD_DIR"
