@@ -12,17 +12,16 @@ RUN sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-*.repo \
 # ── Copy the assembled tarball into the image ────────────────────────────────
 COPY staging/octg/ /opt/octg/
 
-# ── Ensure all binaries are executable (belt + suspenders) ────────────────────
-# CI artifact pipeline (docker build → upload-artifact → download-artifact → tar)
-# can drop the execute bit on lib/opencode. chmod here so the test validates
-# functionality, not CI plumbing.
+# ── Copy test script before chmod (it needs to be executable too) ────────────
+COPY build/test/test-env.sh /opt/test-env.sh
+
+# Ensure all binaries are executable. CI artifact pipeline (docker build →
+# upload-artifact → download-artifact → tar) can drop the execute bit on
+# lib/opencode. chmod here so the test validates functionality, not CI plumbing.
 RUN chmod +x /opt/test-env.sh /opt/octg/setup.sh /opt/octg/octg \
              /opt/octg/bin/opencode /opt/octg/bin/opencode.bin \
              /opt/octg/bin/opencode-telegram \
              /opt/octg/lib/opencode \
              /opt/octg/node/bin/node
-
-# ── Run integration tests ────────────────────────────────────────────────────
-COPY build/test/test-env.sh /opt/test-env.sh
 
 CMD ["/opt/test-env.sh"]
