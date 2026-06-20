@@ -27,13 +27,35 @@ CONFIG_FILE="$CONFIG_DIR/config.env"
 if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
     DOWNLOAD_DIR="$SCRIPT_DIR"
     echo "Installing octg-legacy-glibc to $INSTALL_DIR ..."
+
+    echo "  [INFO]  Removing previous installation at $INSTALL_DIR ..."
     rm -rf "$INSTALL_DIR"
     mkdir -p "$INSTALL_DIR"
+
+    echo "  [INFO]  Copying files from $DOWNLOAD_DIR to $INSTALL_DIR ..."
     cp -a "$SCRIPT_DIR/." "$INSTALL_DIR/"
+
+    echo "  [INFO]  Setting executable permissions ..."
     chmod +x "$INSTALL_DIR"/octg "$INSTALL_DIR"/setup.sh "$INSTALL_DIR"/bin/* "$INSTALL_DIR"/lib/opencode 2>/dev/null || true
+
+    # Verify critical binaries got +x
+    missing_x=()
+    for f in "$INSTALL_DIR"/bin/opencode "$INSTALL_DIR"/bin/opencode.bin "$INSTALL_DIR"/lib/opencode "$INSTALL_DIR"/node/bin/node; do
+        [ -x "$f" ] || missing_x+=("$f")
+    done
+    if [ ${#missing_x[@]} -gt 0 ]; then
+        echo "  [ERROR] The following files are missing execute permission:"
+        for f in "${missing_x[@]}"; do
+            echo "            $f"
+        done
+        echo "  [ERROR] Run manually:  chmod +x ${missing_x[*]}"
+        exit 1
+    fi
+    echo "  [INFO]  Executables verified: octg, bin/opencode, bin/opencode.bin, lib/opencode, node/bin/node"
+
     SCRIPT_DIR="$INSTALL_DIR"
     cd "$SCRIPT_DIR"
-    echo "Done. You may now delete the download at: $DOWNLOAD_DIR"
+    echo "  [INFO]  Done. You may now delete the download at: $DOWNLOAD_DIR"
 fi
 
 # ---------------------------------------------------------------------------

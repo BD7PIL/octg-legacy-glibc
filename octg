@@ -765,6 +765,21 @@ upgrade_legacy() {
     tar xzf "$tmp" -C "$dir" --strip-components=1
     echo "$latest_ver" > "$dir/VERSION"
 
+    # Ensure executables have +x (tarball may lose it through CI artifact pipeline)
+    chmod +x "$dir"/octg "$dir"/setup.sh "$dir"/bin/* "$dir"/lib/opencode 2>/dev/null || true
+
+    # Verify critical binaries got +x before proceeding
+    local missing_x=()
+    for f in "$dir"/bin/opencode "$dir"/bin/opencode.bin "$dir"/lib/opencode "$dir"/node/bin/node; do
+        [ -x "$f" ] || missing_x+=("$f")
+    done
+    if [ ${#missing_x[@]} -gt 0 ]; then
+        echo "ERROR: Missing execute permission on:"
+        printf '         %s\n' "${missing_x[@]}"
+        echo "       Run manually:  chmod +x ${missing_x[*]}"
+        return 1
+    fi
+
     echo "Restoring instances..."
     cmd_restore
 
