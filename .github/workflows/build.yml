@@ -157,6 +157,11 @@ jobs:
           # Copy node binary from bot artifact
           cp -r staging/bot/node         staging/octg/node
 
+          # npm arborist looks for node/lib/ relative to the node binary's
+          # install prefix. Without this empty directory, commands like
+          # `npx skills add` crash with ENOENT: lstat('...node/lib').
+          mkdir -p staging/octg/node/lib
+
           # Copy bot files into bot/
           mkdir -p staging/octg/bot
           cp -r staging/bot/dist        staging/octg/bot/
