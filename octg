@@ -115,7 +115,18 @@ port_in_use() {
 
 find_free_port() {
     for p in "${PORTS[@]}"; do
-        port_in_use "$p" || { echo "$p"; return 0; }
+        # Port is free only if: not listening AND no live wrapper process
+        port_in_use "$p" && continue
+        local _pid_f _pid
+        _pid_f=$(pf "$p")
+        if [ -f "$_pid_f" ]; then
+            _pid=$(cat "$_pid_f" 2>/dev/null || true)
+            if [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null; then
+                continue  # wrapper still alive, port is occupied
+            fi
+            rm -f "$_pid_f"  # stale PID file, clean up
+        fi
+        echo "$p"; return 0
     done
     return 1
 }
