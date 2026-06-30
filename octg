@@ -759,8 +759,13 @@ upgrade_legacy() {
 
     echo "Downloading $latest_ver..."
     local tmp="/tmp/octg-legacy-${latest_ver}.tar.gz"
+    rm -f "$tmp"
     if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
-        gh release download "$latest_ver" -R BD7PIL/octg-legacy-glibc -D "$(dirname "$tmp")" --clobber
+        gh release download "$latest_ver" -R BD7PIL/octg-legacy-glibc \
+            -D /tmp --pattern "octg-legacy-glibc-*.tar.gz" --clobber
+        # gh saves with the asset's original name (octg-legacy-glibc-*.tar.gz),
+        # normalize to the expected path
+        mv /tmp/octg-legacy-glibc-${latest_ver}.tar.gz "$tmp" 2>/dev/null || true
     else
         local auth=""
         [ -n "${GH_TOKEN:-}" ] && auth="-H Authorization:token $GH_TOKEN"
