@@ -97,6 +97,7 @@ jobs:
         with:
           name: opencode-pkg
           path: artifacts/opencode/
+          retention-days: 1
 
   # ===========================================================================
   # 3. Build bot (CentOS 7 / glibc 2.17)
@@ -124,6 +125,7 @@ jobs:
         with:
           name: bot-pkg
           path: artifacts/bot/
+          retention-days: 1
 
   # ===========================================================================
   # 4. Package tarball + test on CentOS 7
@@ -195,6 +197,7 @@ jobs:
         with:
           name: tarball
           path: octg-legacy-glibc-${{ needs.detect.outputs.tag }}.tar.gz
+          retention-days: 1
 
       - name: Test in CentOS 7
         run: |
