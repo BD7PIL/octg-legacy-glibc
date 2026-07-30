@@ -265,13 +265,47 @@ jobs:
             - musl isolation: https://github.com/pedropombeiro/opencode-legacy-glibc
 
   # ===========================================================================
-  # 6. Cleanup old workflow runs (hourly cron generates many runs)
+  # 6. Cleanup old artifacts and workflow runs (hourly cron generates many)
   # ===========================================================================
   cleanup:
     needs: release
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            // Keep artifacts from 2 newest workflow runs
+            const { data: { artifacts } } = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const runMap = {};
+            for (const a of artifacts.filter(a => !a.expired && a.workflow_run?.id)) {
+              const rid = a.workflow_run.id;
+              if (!runMap[rid]) runMap[rid] = [];
+              runMap[rid].push(a);
+            }
+            const sortedRuns = Object.entries(runMap)
+              .sort(([, artsA], [, artsB]) => {
+                const tA = Math.max(...artsA.map(a => new Date(a.created_at).getTime()));
+                const tB = Math.max(...artsB.map(a => new Date(a.created_at).getTime()));
+                return tB - tA;
+              })
+              .slice(2);
+            const toDelete = sortedRuns.flatMap(([, arts]) => arts.map(a => a.id));
+            for (const id of toDelete) {
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: id,
+              });
+            }
+            const keptCount = artifacts.filter(a => !a.expired && a.workflow_run?.id).length - toDelete.length;
+            console.log(`Deleted ${toDelete.length} artifacts, kept ${keptCount} (2 newest runs)`);
+
       - uses: actions/github-script@v7
         continue-on-error: true
         with:
