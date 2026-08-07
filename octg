@@ -345,7 +345,9 @@ while true; do
 
         _r=0
         while [ $_r -lt 30 ]; do
-            curl -s --max-time 3 "http://localhost:${_PORT}/health" >/dev/null 2>&1 && break
+            # TCP listen probe — immune to basic-auth 401 on /health and
+            # cannot hang (unlike curl without --max-time on auth-challenged endpoints)
+            ss -ltn "sport = :$_PORT" 2>/dev/null | grep -q LISTEN && break
             sleep 1; _r=$((_r+1))
         done
         if ! kill -0 "$_OC_PID" 2>/dev/null; then
