@@ -25,7 +25,12 @@ RUN printf '[centos-sclo-rh]\nname=CentOS-7 - SCLo rh\nbaseurl=http://vault.cent
         curl \
         xz \
         python3 \
+        rh-python38 \
     && yum clean all
+
+# node-gyp 11.x (bundled with Node 22) requires Python 3.8+ (walrus operator)
+# CentOS 7 system python3 is 3.6 — use SCL rh-python38 for native builds
+ENV PYTHON=/opt/rh/rh-python38/root/usr/bin/python3
 
 # ── Install Node.js 22 (glibc-217 unofficial build) ─────────────────────────
 ARG NODE_VERSION=22.23.1
