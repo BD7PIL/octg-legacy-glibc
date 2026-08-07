@@ -12,7 +12,7 @@ The opencode binary is built against **musl libc** (not glibc).  The tarball shi
 - A **patched ELF interpreter** that loads the musl linker from `/tmp/.octg-ld/`
 - A **`.path` file mechanism** so the musl linker can find bundled libraries without `LD_LIBRARY_PATH`
 - A **clear\_ldpath.so** shim that unsets `LD_PRELOAD` after loading (prevents leaking to child processes)
-- A **bundled Node.js 20** (glibc-217 unofficial build) for the Telegram bot
+- A **bundled Node.js 22** (glibc-217 unofficial build) for the Telegram bot
 - The **opencode-telegram-bot** compiled on CentOS 7 (native `better-sqlite3` against glibc 2.17)
 
 The result: opencode runs via musl isolation while the bot uses the system's glibc 2.17.
@@ -122,7 +122,7 @@ For model provider and authentication configuration, see the [opencode documenta
 
 ### bot crashes
 
-- Verify the bundled Node.js works: `node/bin/node --version` (should print v20.x)
+- Verify the bundled Node.js works: `node/bin/node --version` (should print v22.x)
 - Check that `better-sqlite3` loads: `node/bin/node -e "require('./bot/node_modules/better-sqlite3')"`
 - If native module errors occur, ensure `devtoolset` is available (check `OCTG_DEVTOOLSET` in config)
 - Check logs: `cat ~/.config/octg/log-<port>.out`

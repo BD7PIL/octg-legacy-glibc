@@ -27,8 +27,8 @@ RUN printf '[centos-sclo-rh]\nname=CentOS-7 - SCLo rh\nbaseurl=http://vault.cent
         python3 \
     && yum clean all
 
-# ── Install Node.js 20 (glibc-217 unofficial build) ─────────────────────────
-ARG NODE_VERSION=20.18.1
+# ── Install Node.js 22 (glibc-217 unofficial build) ─────────────────────────
+ARG NODE_VERSION=22.23.1
 RUN curl -fsSL "https://unofficial-builds.nodejs.org/download/release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64-glibc-217.tar.xz" \
         | tar xJ -C /usr/local --strip-components=1 \
     && node --version && npm --version

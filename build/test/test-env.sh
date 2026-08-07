@@ -57,11 +57,35 @@ echo "=== Test 4: Node.js runtime ==="
 echo "  ldd output:"
 ldd node/bin/node 2>&1 | head -10 | sed 's/^/    /'
 NODE_VER=$(node/bin/node --version 2>&1 || true)
-if echo "$NODE_VER" | grep -q "^v20"; then
+if echo "$NODE_VER" | grep -q "^v22"; then
     echo "  Node.js $NODE_VER"
     pass
 else
     fail "Node.js not working: $NODE_VER"
+fi
+
+# ── Test 4b: Node satisfies bot engines requirement ─────────────────────────
+echo "=== Test 4b: Node satisfies bot engines ==="
+BOT_ENGINES=$(node/bin/node -e "console.log(require('./bot/package.json').engines?.node || '')" 2>/dev/null || true)
+if [ -z "$BOT_ENGINES" ]; then
+    fail "bot engines.node not readable: $BOT_ENGINES"
+else
+    MIN_NODE=$(echo "$BOT_ENGINES" | sed 's/[^0-9.]*//g' | cut -d. -f1)
+    CUR_MAJOR=$(node/bin/node -e "console.log(process.versions.node.split('.')[0])" 2>/dev/null)
+    echo "  bot engines.node=$BOT_ENGINES  current major=$CUR_MAJOR"
+    if [ -n "$CUR_MAJOR" ] && [ "$CUR_MAJOR" -ge "$MIN_NODE" ]; then
+        pass
+    else
+        fail "Node $CUR_MAJOR does not satisfy bot engines >=$MIN_NODE"
+    fi
+fi
+
+# ── Test 4c: opencode-telegram wrapper smoke test (bundled Node) ────────────
+echo "=== Test 4c: opencode-telegram wrapper smoke ==="
+if bin/opencode-telegram --help 2>&1 | grep -qiE 'opencode-telegram|Usage:'; then
+    pass
+else
+    fail "opencode-telegram wrapper did not execute"
 fi
 
 # ── Test 5: Bot files present ────────────────────────────────────────────────
